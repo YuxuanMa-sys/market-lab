@@ -1,0 +1,24 @@
+[project]
+name = "market-lab"
+version = "0.1.0"
+description = "US stock support/resistance analysis, market regime, and dip-buy scoring with pre/post-market reports"
+requires-python = ">=3.11"
+dependencies = [
+    "yfinance>=0.2.60",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "pyyaml>=6.0",
+    "jinja2>=3.1",
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+]
+
+[project.scripts]
+market-lab = "market_lab.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/market_lab"]

@@ -1,0 +1,78 @@
+# 自选股清单：每天盘前/盘后报告会逐个分析这里的票。
+# note 字段随便写，会原样显示在报告里（比如你的成本、计划）。
+tickers:
+  - symbol: SMR
+    note: ""
+  - symbol: MRVL
+    note: ""
+  - symbol: NNE
+    note: ""
+  - symbol: IREN
+    note: ""
+  - symbol: WMT
+    note: ""
+  - symbol: CBRS
+    note: ""
+  - symbol: SNDK
+    note: ""
+  - symbol: GOOGL
+    note: ""
+  - symbol: MU
+    note: ""
+  - symbol: NBIS
+    note: ""
+  - symbol: GLW
+    note: ""
+  - symbol: CSCO
+    note: ""
+  - symbol: ASTS
+    note: ""
+  - symbol: KLAC
+    note: ""
+  - symbol: CRWV
+    note: ""
+  - symbol: FORM
+    note: ""
+  - symbol: POWL
+    note: ""
+  - symbol: COHR
+    note: ""
+  - symbol: FN
+    note: ""
+  - symbol: AMKR
+    note: ""
+  - symbol: SOXX
+    note: ""
+  - symbol: RKLB
+    note: ""
+  - symbol: COIN
+    note: ""
+  - symbol: LITE
+    note: ""
+  - symbol: SPCX
+    note: ""
+  - symbol: DELL
+    note: ""
+  - symbol: INTC
+    note: ""
+  # ---- 2026-08-19 新增观察池（板块分散候选，非买入清单）----
+  - symbol: VKTX
+    note: "生物医药/GLP-1减肥药；Q3维持给药数据读出，Ph3数据是二元风险，仓位按最高风险档"
+  - symbol: SMMT
+    note: "生物医药/PD-1双抗；PDUFA 2026-11-14 硬催化，CRL风险真实存在"
+  - symbol: KTOS
+    note: "国防/无人僚机；订单积压$2B，从$134腰斩到$60后企稳"
+  - symbol: RBRK
+    note: "网络安全/AI数据安全；8/27财报"
+  - symbol: SOFI
+    note: "金融科技；Q2超预期+上调指引，YTD深跌后被持续买回"
+  - symbol: VST
+    note: "电力/AI供电；与KKR/NVIDIA合资，距高点-24%，催化剂+深回调组合"
+  - symbol: SYM
+    note: "仓储机器人；GAAP已盈利，依赖沃尔玛大客户"
+  - symbol: IONQ
+    note: "量子计算；营收+287%但60倍PS，板块情绪化剧烈"
+  - symbol: TEM
+    note: "AI医疗；EBITDA转正，今天刚+23%大涨——等回调，别追"
+  - symbol: BABA
+    note: "中概/AI云；Qwen生态+云智能+38%"

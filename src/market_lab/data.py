@@ -1,0 +1,198 @@
+"""数据层。当前实现基于 yfinance（免费）；配置 POLYGON_API_KEY 后可替换为 Polygon。
+
+所有取数走这里，上层分析代码不感知数据源。日线数据按天缓存在 data/cache/。
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+from pathlib import Path
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import pandas as pd
+import yfinance as yf
+
+CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "cache"
+MARKET_TZ = ZoneInfo("America/Chicago")
+
+
+def _now_ct() -> datetime:
+    # 缓存和日历一律用市场时区，机器换时区时数据语义不变
+    return datetime.now(MARKET_TZ)
+
+
+def _session_tag() -> str:
+    # 收盘(15:00 CT)后再留15分钟给 Polygon 延迟数据归集，15:20 才算 pm，
+    # 否则 15:00-15:15 之间跑报告会把半根日K当完整K线缓存一整个下午
+    now = _now_ct()
+    return "pm" if (now.hour, now.minute) >= (15, 20) else "am"
+
+
+def _cache_path(key: str, by_session: bool = False) -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    safe = key.replace("^", "_").replace("=", "_").replace("/", "_")
+    tag = f"_{_session_tag()}" if by_session else ""
+    return CACHE_DIR / f"{safe}_{_now_ct().date().isoformat()}{tag}.pkl"
+
+
+def _is_stock(ticker: str) -> bool:
+    """Polygon 只有股票/ETF；指数(^)和期货(=F)走 yfinance。"""
+    return not ticker.startswith("^") and "=" not in ticker
+
+
+def get_daily(ticker: str, period: str = "2y") -> pd.DataFrame:
+    """日线 OHLCV，拆分/分红已复权。列: Open High Low Close Volume。"""
+    use_polygon = has_polygon() and _is_stock(ticker)
+    provider = "pg" if use_polygon else "yf"
+    p = _cache_path(f"{provider}_{ticker}_{period}", by_session=True)
+    if p.exists():
+        return pd.read_pickle(p)
+    if use_polygon:
+        try:
+            from .providers import polygon
+            df = polygon.get_daily(ticker, period)
+            df.to_pickle(p)
+            return df
+        except Exception:
+            pass  # Polygon 失败时降级到 yfinance
+    # auto_adjust=False = 仅拆分复权，与 Polygon adjusted=true 口径一致；
+    # 否则降级切换时高分红票的历史位置会整体漂移
+    df = yf.Ticker(ticker).history(period=period, auto_adjust=False)
+    if df.empty:
+        raise ValueError(f"没有取到 {ticker} 的数据，请确认代码是否正确")
+    df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
+    df.index = df.index.tz_localize(None)
+    df.to_pickle(p)
+    return df
+
+
+def get_daily_batch(tickers: list[str], period: str = "1y") -> dict[str, pd.DataFrame]:
+    """批量日线，用于市场宽度计算。取数失败的票直接跳过。"""
+    digest = hashlib.md5(",".join(sorted(tickers)).encode()).hexdigest()[:10]
+    p = _cache_path(f"batch_{digest}_{period}", by_session=True)
+    if p.exists():
+        return pd.read_pickle(p)
+    raw = yf.download(
+        tickers, period=period, auto_adjust=False, progress=False, group_by="ticker", threads=True
+    )
+    out: dict[str, pd.DataFrame] = {}
+    for t in tickers:
+        try:
+            df = raw[t][["Open", "High", "Low", "Close", "Volume"]].dropna(how="all")
+            if len(df) > 50:
+                out[t] = df
+        except KeyError:
+            continue
+    pd.to_pickle(out, p)
+    return out
+
+
+def get_quote(ticker: str) -> dict:
+    """最新报价（含盘前盘后/期货的最近成交）。失败时返回空 dict。"""
+    if has_polygon() and _is_stock(ticker):
+        try:
+            from .providers import polygon
+            q = polygon.get_quote(ticker)
+            if q:
+                return q
+        except Exception:
+            pass
+    try:
+        fi = yf.Ticker(ticker).fast_info
+        last = fi["last_price"]
+        prev = fi["previous_close"]
+        return {
+            "last": float(last),
+            "prev_close": float(prev),
+            "chg_pct": (float(last) / float(prev) - 1) * 100 if prev else None,
+        }
+    except Exception:
+        return {}
+
+
+def get_news(ticker: str, limit: int = 6) -> list[dict]:
+    """个股新闻标题。Polygon 可用时优先（带 AI 情绪标注）。"""
+    if has_polygon() and _is_stock(ticker):
+        try:
+            from .providers import polygon
+            items = polygon.get_news(ticker, limit)
+            if items:
+                return items
+        except Exception:
+            pass
+    try:
+        items = yf.Ticker(ticker).news or []
+    except Exception:
+        return []
+    out = []
+    for it in items[:limit]:
+        c = it.get("content", it)
+        title = c.get("title", "")
+        url = ""
+        cu = c.get("canonicalUrl")
+        if isinstance(cu, dict):
+            url = cu.get("url", "")
+        else:
+            url = it.get("link", "")
+        provider = ""
+        pv = c.get("provider")
+        if isinstance(pv, dict):
+            provider = pv.get("displayName", "")
+        elif "publisher" in it:
+            provider = it.get("publisher", "")
+        ts = c.get("pubDate") or it.get("providerPublishTime", "")
+        if title:
+            out.append({"title": title, "url": url, "source": provider, "time": str(ts)})
+    return out
+
+
+def has_polygon() -> bool:
+    return bool(os.environ.get("POLYGON_API_KEY"))
+
+
+def get_short_stats(ticker: str) -> dict | None:
+    """空头状态（Ortex）。EOD 数据按最近交易日缓存（周末不重取），省 credits；失败返回 None 自动降级。"""
+    if not os.environ.get("ORTEX_API_KEY"):
+        return None
+    d = _now_ct().date()
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    p = CACHE_DIR / f"short_{ticker}_{d.isoformat()}.pkl"
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    if p.exists():
+        return pd.read_pickle(p)
+    try:
+        from .providers import ortex
+        s = ortex.short_stats(ticker)
+    except Exception:
+        return None  # 网络/限流等瞬时失败不缓存，下次再试
+    pd.to_pickle(s, p)  # 成功结果都缓存，包括"无数据"(None)，避免同日反复打 API
+    return s
+
+
+def get_option_walls(ticker: str, price: float) -> dict | None:
+    """期权持仓墙（Polygon Options）。无权限/链太薄/失败时返回 None，自动降级。"""
+    if not has_polygon() or not _is_stock(ticker):
+        return None
+    p = _cache_path(f"walls_{ticker}", by_session=True)
+    if p.exists():
+        return pd.read_pickle(p)
+    try:
+        from .providers import polygon
+        w = polygon.get_option_walls(ticker, price)
+    except Exception:
+        return None
+    pd.to_pickle(w, p)
+    return w
+
+
+def get_earnings_calendar(days: int = 14) -> list[dict]:
+    """未来 N 天财报日历（Finnhub）。没配 key 时返回空列表。"""
+    if not os.environ.get("FINNHUB_API_KEY"):
+        return []
+    try:
+        from .providers import finnhub
+        return finnhub.earnings_calendar(days)
+    except Exception:
+        return []
