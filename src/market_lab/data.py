@@ -6,12 +6,57 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from pathlib import Path
 from datetime import date, datetime, timedelta
+from urllib.parse import quote as _urlquote
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import requests
 import yfinance as yf
+
+# 云端数据中心 IP 会被 Yahoo 对 yfinance 的 cookie/crumb 流程严格限流(429)，
+# 但带浏览器 UA 直调 chart 接口可用——作为 yfinance 库的备用通道
+_BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+_PERIOD_DAYS = {"6mo": 183, "1y": 365, "2y": 730, "5y": 1825}
+
+
+def _yahoo_chart(ticker: str, days: int) -> dict:
+    end = int(time.time())
+    r = requests.get(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{_urlquote(ticker)}",
+        params={"period1": end - days * 86400, "period2": end, "interval": "1d"},
+        headers={"User-Agent": _BROWSER_UA},
+        timeout=20,
+    )
+    r.raise_for_status()
+    return r.json()["chart"]["result"][0]
+
+
+def _yahoo_direct_daily(ticker: str, period: str = "2y") -> pd.DataFrame:
+    j = _yahoo_chart(ticker, _PERIOD_DAYS.get(period, 730))
+    q = j["indicators"]["quote"][0]
+    df = pd.DataFrame(
+        {"Open": q["open"], "High": q["high"], "Low": q["low"], "Close": q["close"], "Volume": q["volume"]},
+        index=pd.to_datetime(j["timestamp"], unit="s").normalize(),
+    ).dropna(subset=["Close"])
+    if df.empty:
+        raise ValueError(f"Yahoo 直连也没有取到 {ticker} 的数据")
+    return df
+
+
+def _yahoo_direct_quote(ticker: str) -> dict:
+    meta = _yahoo_chart(ticker, 7)["meta"]
+    last = meta.get("regularMarketPrice")
+    prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+    if last is None or not prev:
+        return {}
+    return {
+        "last": float(last),
+        "prev_close": float(prev),
+        "chg_pct": (float(last) / float(prev) - 1) * 100,
+    }
 
 CACHE_DIR = Path(__file__).resolve().parents[2] / "data" / "cache"
 MARKET_TZ = ZoneInfo("America/Chicago")
@@ -58,11 +103,14 @@ def get_daily(ticker: str, period: str = "2y") -> pd.DataFrame:
             pass  # Polygon 失败时降级到 yfinance
     # auto_adjust=False = 仅拆分复权，与 Polygon adjusted=true 口径一致；
     # 否则降级切换时高分红票的历史位置会整体漂移
-    df = yf.Ticker(ticker).history(period=period, auto_adjust=False)
-    if df.empty:
-        raise ValueError(f"没有取到 {ticker} 的数据，请确认代码是否正确")
-    df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
-    df.index = df.index.tz_localize(None)
+    try:
+        df = yf.Ticker(ticker).history(period=period, auto_adjust=False)
+        if df.empty:
+            raise ValueError("empty")
+        df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
+        df.index = df.index.tz_localize(None)
+    except Exception:
+        df = _yahoo_direct_daily(ticker, period)  # yfinance 被限流(云端常见)时的直连备用
     df.to_pickle(p)
     return df
 
@@ -73,17 +121,28 @@ def get_daily_batch(tickers: list[str], period: str = "1y") -> dict[str, pd.Data
     p = _cache_path(f"batch_{digest}_{period}", by_session=True)
     if p.exists():
         return pd.read_pickle(p)
-    raw = yf.download(
-        tickers, period=period, auto_adjust=False, progress=False, group_by="ticker", threads=True
-    )
     out: dict[str, pd.DataFrame] = {}
-    for t in tickers:
-        try:
-            df = raw[t][["Open", "High", "Low", "Close", "Volume"]].dropna(how="all")
-            if len(df) > 50:
-                out[t] = df
-        except KeyError:
-            continue
+    if has_polygon():
+        # Polygon 不限请求数且对云端 IP 友好；yf.download 批量接口在云端会被 Yahoo 限流
+        from .providers import polygon
+        for t in tickers:
+            try:
+                df = polygon.get_daily(t, period)
+                if len(df) > 50:
+                    out[t] = df
+            except Exception:
+                continue
+    if not out:
+        raw = yf.download(
+            tickers, period=period, auto_adjust=False, progress=False, group_by="ticker", threads=True
+        )
+        for t in tickers:
+            try:
+                df = raw[t][["Open", "High", "Low", "Close", "Volume"]].dropna(how="all")
+                if len(df) > 50:
+                    out[t] = df
+            except KeyError:
+                continue
     pd.to_pickle(out, p)
     return out
 
@@ -107,6 +166,10 @@ def get_quote(ticker: str) -> dict:
             "prev_close": float(prev),
             "chg_pct": (float(last) / float(prev) - 1) * 100 if prev else None,
         }
+    except Exception:
+        pass
+    try:
+        return _yahoo_direct_quote(ticker)
     except Exception:
         return {}
 
