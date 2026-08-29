@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 RISK_PER_TRADE_PCT = 1.0
 MAX_SINGLE_POS_PCT = 10.0
 CLUSTER_CAP_PCT = 40.0
+SUB_CLUSTER_CAP_PCT = 20.0
 TOTAL_OPEN_RISK_CAP_PCT = 8.0
 DD_THROTTLE_RATIO = 0.92
 
@@ -38,17 +39,25 @@ def load_account() -> dict | None:
         return None
 
 
-def _load_clusters() -> dict[str, str]:
+def _load_clusters() -> tuple[dict[str, str], dict[str, str]]:
+    """返回 (ticker→大簇, ticker→子簇全名)。平簇只有大簇映射。"""
     p = ROOT / "clusters.yaml"
-    out: dict[str, str] = {}
+    parent: dict[str, str] = {}
+    sub: dict[str, str] = {}
     try:
-        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        for cname, tickers in data.items():
-            for t in tickers or []:
-                out[str(t).upper()] = cname
+        raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        for cname, val in raw.items():
+            if isinstance(val, dict):
+                for sname, tickers in val.items():
+                    for t in tickers or []:
+                        parent[str(t).upper()] = cname
+                        sub[str(t).upper()] = f"{cname}/{sname}"
+            else:
+                for t in val or []:
+                    parent[str(t).upper()] = cname
     except Exception:
         pass
-    return out
+    return parent, sub
 
 
 def apply_sizing(ok_stocks: list[dict], wl_by_symbol: dict[str, dict]) -> dict:
@@ -61,16 +70,20 @@ def apply_sizing(ok_stocks: list[dict], wl_by_symbol: dict[str, dict]) -> dict:
     throttled = bool(acc and acc.get("high_water") and total and total < acc["high_water"] * DD_THROTTLE_RATIO)
     risk_base = RISK_PER_TRADE_PCT * (0.5 if throttled else 1.0)
 
-    clusters = _load_clusters()
+    clusters, subclusters = _load_clusters()
     pos_pct: dict[str, float] = {}
     for t, item in wl_by_symbol.items():
         if item.get("cost") is not None and item.get("pct"):
             pos_pct[t] = float(item["pct"])
 
     cluster_sums: dict[str, float] = {}
+    sub_sums: dict[str, float] = {}
     for t, pct in pos_pct.items():
         c = clusters.get(t, "其他")
         cluster_sums[c] = round(cluster_sums.get(c, 0) + pct, 1)
+        sc = subclusters.get(t)
+        if sc:
+            sub_sums[sc] = round(sub_sums.get(sc, 0) + pct, 1)
 
     # 总开放风险：每只持仓到其止损单价位的潜在亏损合计
     open_risk = 0.0
@@ -89,6 +102,12 @@ def apply_sizing(ok_stocks: list[dict], wl_by_symbol: dict[str, dict]) -> dict:
     for c, v in cluster_sums.items():
         if v > CLUSTER_CAP_PCT:
             warnings.append(f"⚠ 「{c}」簇持仓合计 {v}% 已超上限 {CLUSTER_CAP_PCT:.0f}%——该簇新单建议跳过，反弹时优先减该簇")
+    for sc, v in sub_sums.items():
+        if v > SUB_CLUSTER_CAP_PCT:
+            warnings.append(f"⚠ 子簇「{sc}」合计 {v}% 超子簇上限 {SUB_CLUSTER_CAP_PCT:.0f}%——同一细分故事押太重了")
+    for t, pct in pos_pct.items():
+        if pct > MAX_SINGLE_POS_PCT:
+            warnings.append(f"⚠ {t} 单票 {pct}% 超单票上限 {MAX_SINGLE_POS_PCT:.0f}%——反弹到压力位时优先减它，别再补仓")
     if open_risk > TOTAL_OPEN_RISK_CAP_PCT:
         warnings.append(f"⚠ 总开放风险 {open_risk}% 超上限 {TOTAL_OPEN_RISK_CAP_PCT:.0f}%——收紧部分止损或减仓，别再开新仓")
 
@@ -112,8 +131,11 @@ def apply_sizing(ok_stocks: list[dict], wl_by_symbol: dict[str, dict]) -> dict:
             stop_ref = inv if inv else entry_ref * 0.93
             dist = max((entry_ref - stop_ref) / entry_ref, 0.02)
             total_pct = min(risk / dist, MAX_SINGLE_POS_PCT)
-            # 簇约束：超限则减半并警告
+            # 簇约束（两层取更紧的）：超限则缩减并警告
             room = CLUSTER_CAP_PCT - cluster_sums.get(c, 0)
+            sc = subclusters.get(t)
+            if sc is not None:
+                room = min(room, SUB_CLUSTER_CAP_PCT - sub_sums.get(sc, 0))
             if room <= 0:
                 total_pct = 0
                 adv["reasons"].append(f"⚠ 「{c}」簇已满（{cluster_sums.get(c, 0)}%），本单被组合约束否决——要么跳过，要么先减该簇旧仓")
@@ -147,7 +169,9 @@ def apply_sizing(ok_stocks: list[dict], wl_by_symbol: dict[str, dict]) -> dict:
         "cash_pct": round(max(0.0, 100 - sum(pos_pct.values())), 1) if pos_pct else None,
         "positions_pct": dict(sorted(pos_pct.items(), key=lambda kv: -kv[1])),
         "cluster_sums": dict(sorted(cluster_sums.items(), key=lambda kv: -kv[1])),
+        "sub_cluster_sums": dict(sorted(sub_sums.items(), key=lambda kv: -kv[1])),
         "cluster_cap": CLUSTER_CAP_PCT,
+        "sub_cluster_cap": SUB_CLUSTER_CAP_PCT,
         "risk_per_trade": risk_base,
         "throttled": throttled,
         "has_account_file": acc is not None,

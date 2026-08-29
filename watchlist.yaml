@@ -25,27 +25,33 @@ tickers:
     note: ""
   - symbol: IREN
     cost: 39.53
+    pct: 7.28
     note: ""
   - symbol: WMT
     note: ""
   - symbol: CBRS
     cost: 187.78
+    pct: 3.68
     note: ""
   - symbol: AMAT
     cost: 479.94
+    pct: 3.79
     note: ""
   - symbol: SNDK
     note: ""
   - symbol: GOOGL
     cost: 355.88
+    pct: 2.85
     note: ""
   - symbol: BSX
     cost: 46.77
+    pct: 5.77
     note: ""
   - symbol: MU
     note: ""
   - symbol: NBIS
     cost: 245.47
+    pct: 12.88
     note: ""
   - symbol: GLW
     note: ""
@@ -53,11 +59,13 @@ tickers:
     note: ""
   - symbol: ASTS
     cost: 61.42
+    pct: 4.77
     note: ""
   - symbol: KLAC
     note: ""
   - symbol: CRWV
     cost: 89.52
+    pct: 6.92
     note: ""
   - symbol: FORM
     note: ""
@@ -73,11 +81,13 @@ tickers:
     note: ""
   - symbol: RKLB
     cost: 69.01
+    pct: 5.29
     note: ""
   - symbol: COIN
     note: ""
   - symbol: LITE
     cost: 906
+    pct: 3.67
     note: ""
   - symbol: SPCX
     note: ""
@@ -85,6 +95,23 @@ tickers:
     note: ""
   - symbol: INTC
     note: ""
+  # ---- 2026-08-28 低相关科技分散池（corr=与当日持仓组合的1年日收益相关性）----
+  - symbol: ZS
+    note: "零信任安全；corr 0.04；9/3财报是二元事件，自高点回撤30%有承接"
+  - symbol: CRWD
+    note: "端点安全龙头；corr 0.20；8/26财报大超后创新高——等回调别追"
+  - symbol: VEEV
+    note: "生命科学垂直云；corr -0.04(负相关!)；8/26 beat+raise跳涨15%——等回调"
+  - symbol: GH
+    note: "液体活检筛查放量+44%营收；corr 0.15；仍亏损高beta"
+  - symbol: NU
+    note: "拉美数字银行；corr 0.31；单季净利破$11亿；汇率+信贷周期风险"
+  - symbol: SPOT
+    note: "订阅提价+回购；corr -0.01(零相关)；8/18科技普跌日逆势+6%承接极强"
+  - symbol: TTWO
+    note: "GTA VI 2026-11-19发售硬催化；corr 0.18；发售前sell-the-news风险"
+  - symbol: SNPS
+    note: "EDA龙头；corr 0.19(设计opex驱动,与设备capex错位)；8/26财报+16.8%——等回调"
   # ---- 2026-08-19 新增观察池（板块分散候选，非买入清单）----
   - symbol: VKTX
     note: "生物医药/GLP-1减肥药；Q3维持给药数据读出，Ph3数据是二元风险，仓位按最高风险档"

@@ -1,14 +1,22 @@
-# 相关性簇：同簇的票同涨同跌，合计仓位受簇上限约束（默认40%）。
-# 不在任何簇里的票归入"其他"。可自行增删改。
-AI算力半导体:
-  [NBIS, CRWV, IREN, AMAT, KLAC, MU, LITE, COHR, FN, AMKR, FORM, SNDK, INTC, DELL, SOXX, MRVL, GLW, HUT, NVDA, AVGO, SMCI, ANET, VRT, LRCX, TSM]
-核电电力:
-  [SMR, NNE, POWL, LEU, VST, GEV, OKLO, CEG]
-太空国防:
-  [RKLB, ASTS, SPCX, KTOS, AVAV, ONDS]
-加密金融:
-  [COIN, CRCL, HOOD, SOFI, MSTR]
-医疗健康:
-  [BSX, VKTX, SMMT, TEM, NTLA]
-大盘蓝筹:
-  [GOOGL, CSCO, WMT, AAPL, MSFT, META, AMZN]
+# 相关性簇：约束"同涨同跌"的合计仓位。
+# 两种写法：
+#   簇名: [票...]                    —— 平簇，受大簇上限(40%)约束
+#   簇名: {子簇名: [票...], ...}      —— 两层，大簇40%上限 + 每个子簇20%上限
+# 依据(2026-08-28实测)：存储↔光互连暴跌日相关性0.83(同一场崩盘,必须同一大簇)；
+# CSCO/DELL暴跌日与AI硬件相关性≈0,移出；算力云与其他子簇暴跌日仅~0.4,子簇分开计。
+AI硬件:
+  存储: [MU, SNDK]
+  光互连: [LITE, COHR, FN, GLW]
+  设备封测: [AMAT, KLAC, FORM, AMKR, INTC, LRCX, TSM]
+  算力云: [NBIS, CRWV, IREN, HUT]
+  芯片平台: [MRVL, NVDA, AVGO, SMCI, ANET, VRT, SOXX]
+企业IT硬件: [CSCO, DELL]
+企业软件SaaS: [CRWD, ZS, OKTA, VEEV, SNPS, RBRK]
+核电电力: [SMR, NNE, POWL, LEU, VST, GEV, OKLO, CEG]
+太空国防: [RKLB, ASTS, SPCX, KTOS, AVAV, ONDS]
+金融科技: [COIN, CRCL, HOOD, SOFI, MSTR, NU, AFRM, IBKR]
+医疗健康: [BSX, VKTX, SMMT, TEM, NTLA, GH, NTRA]
+消费互联网: [SE, TTWO, SPOT, BABA]
+智能汽车机器人: [TSLA, RIVN, SYM, PONY, OUST]
+前沿科技: [IONQ]
+大盘蓝筹: [GOOGL, WMT, AAPL, MSFT, META, AMZN]

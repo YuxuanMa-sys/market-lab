@@ -115,6 +115,7 @@ tr:last-child td { border-bottom: none; }
   {% if risk.cash_pct is not none %}　现金 <b>{{ risk.cash_pct }}%</b>{% endif %}
   　单笔风险 {{ risk.risk_per_trade }}%{% if risk.throttled %}（⛔熔断减半中）{% endif %}
   <div class="muted" style="margin-top:4px">簇占比：{% for c, v in risk.cluster_sums.items() %}{{ c }} {{ v }}%{% if not loop.last %} · {% endif %}{% endfor %}（簇上限 {{ risk.cluster_cap|int }}%）
+  {% if risk.sub_cluster_sums %}<br>子簇：{% for c, v in risk.sub_cluster_sums.items() %}{{ c }} {{ v }}%{% if not loop.last %} · {% endif %}{% endfor %}（子簇上限 {{ risk.sub_cluster_cap|int }}%）{% endif %}
   {% if not risk.has_account_file %}<br>提示：本地未找到 account.yaml，挂单只显示仓位%不显示股数（云端属正常）{% endif %}</div>
   {% for w in risk.warnings %}<div class="event">{{ w }}</div>{% endfor %}
 </div>
