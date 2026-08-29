@@ -11,6 +11,7 @@ import yaml
 from jinja2 import Template
 
 from . import data, market, stock
+from .advice import ACTION_URGENCY, URGENT_ACTIONS, advise, market_mode
 
 ROOT = Path(__file__).resolve().parents[2]
 REPORTS_DIR = ROOT / "reports"
@@ -59,6 +60,9 @@ tr:last-child td { border-bottom: none; }
   padding: 6px 10px; margin: 4px 0; font-size: 13.5px; }
 .plan { border-left: 3px solid var(--accent); padding: 6px 10px; margin: 8px 0;
   font-size: 13.5px; background: color-mix(in srgb, var(--accent) 7%, transparent); border-radius: 0 8px 8px 0; }
+.advice { border-left: 3px solid var(--up); padding: 6px 10px; margin: 8px 0;
+  font-size: 13.5px; background: color-mix(in srgb, var(--up) 8%, transparent); border-radius: 0 8px 8px 0; }
+.advice.urgent { border-left-color: var(--down); background: color-mix(in srgb, var(--down) 9%, transparent); }
 .ticker-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .ticker-head .sym { font-size: 18px; font-weight: 700; }
 .news li { margin: 3px 0; font-size: 13.5px; }
@@ -87,6 +91,7 @@ tr:last-child td { border-bottom: none; }
     <span class="muted">{{ mkt.leverage.desc }}</span>
   </div>
   {% endif %}
+  <div class="gauge" style="margin-top:8px">当前调度模式：<b>{{ mmode_desc }}</b></div>
 </div>
 
 <h2>指数与隔夜</h2>
@@ -140,6 +145,13 @@ VIX {{ mkt.vix.value }}（2年 {{ mkt.vix.percentile_2y|int }}% 分位{% if mkt.
     {% if s.short and s.short.si_pct_float is not none %}<span class="badge">空头: SI {{ s.short.si_pct_float }}%流通盘{% if s.short.si_trend_3w is not none %}（3周{{ "%+.2f"|format(s.short.si_trend_3w) }}）{% endif %}{% if s.short.ctb_new is defined and s.short.ctb_new is not none %} · 借券费 {{ s.short.ctb_new }}%{% endif %}{% if s.short.dtc is defined and s.short.dtc is not none %} · 回补需 {{ s.short.dtc }}天{% endif %}</span>{% endif %}
     {% if s.note %}<span class="muted">备注: {{ s.note }}</span>{% endif %}
   </div>
+  {% if s.advice %}
+  <div class="advice{{ ' urgent' if s.advice.action in urgent_actions else '' }}">
+    🎯 <b>{{ s.advice.action }}</b>{% if s.advice.pnl_pct is defined and s.advice.pnl_pct is not none %} <b>[持仓 · {{ s.advice.mode }} · 浮盈 {{ "%+.1f%%"|format(s.advice.pnl_pct) }}]</b>{% else %}（{{ s.advice.mode }}）{% endif %}
+    — {{ s.advice.reasons|join("；") }}
+    {% if s.advice.tranches %}<div class="muted">分批参考：1/3 @ {{ s.advice.tranches.t1 }} · 1/3 @ {{ s.advice.tranches.t2 }} · 1/3 @ {{ s.advice.tranches.t3 }}</div>{% endif %}
+  </div>
+  {% endif %}
   {% if s.earnings_date %}<div class="event">📅 {{ s.earnings_date }} 财报——财报跳空会直接跳过支撑位，财报前带杠杆过夜等于赌跳空</div>{% endif %}
   {% if s.plan and s.plan.status != "无计划" %}
   <div class="plan">
@@ -230,8 +242,18 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
             stocks.append({"ticker": sym, "error": str(e)})
 
     ok_stocks = [s for s in stocks if "error" not in s]
-    # 抄底分从高到低排，同分时触发中的排前面
-    ok_stocks.sort(key=lambda s: (-s["dip"]["score"], 0 if s["plan"].get("status") == "触发中" else 1))
+
+    mmode, mmode_desc = market_mode(mkt)
+    wl_by_symbol = {i["symbol"]: i for i in load_watchlist()}
+    for s in ok_stocks:
+        s["advice"] = advise(s, wl_by_symbol.get(s["ticker"], {}), mmode)
+
+    # 持仓在前（按动作紧急度），候选在后（按抄底分从高到低）
+    ok_stocks.sort(key=lambda s: (
+        0 if s["advice"].get("pnl_pct") is not None else 1,
+        ACTION_URGENCY.get(s["advice"]["action"], 9),
+        -s["dip"]["score"],
+    ))
 
     wl_symbols = {item["symbol"] for item in load_watchlist()}
     earnings = [e for e in data.get_earnings_calendar(14) if e.get("symbol") in wl_symbols]
@@ -245,6 +267,8 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         generated_at=now.strftime("%Y-%m-%d %H:%M %Z"),
         session=session,
         mkt=mkt,
+        mmode_desc=mmode_desc,
+        urgent_actions=URGENT_ACTIONS,
         stocks=ok_stocks,
         err_stocks=[s for s in stocks if "error" in s],
         earnings=earnings,
@@ -261,7 +285,10 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     json_path = REPORTS_DIR / f"{stamp}-{session}.json"
     html_path.write_text(html, encoding="utf-8")
     json_path.write_text(
-        json.dumps({"market": mkt, "stocks": stocks, "earnings": earnings}, ensure_ascii=False, indent=1, default=str),
+        json.dumps(
+            {"market_mode": mmode_desc, "market": mkt, "stocks": stocks, "earnings": earnings},
+            ensure_ascii=False, indent=1, default=str,
+        ),
         encoding="utf-8",
     )
     return html_path, json_path

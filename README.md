@@ -19,9 +19,16 @@ uv run market-lab market
 uv run market-lab backtest --period 5y
 ```
 
-## 自选股
+## 自选股与策略模式
 
-编辑 `watchlist.yaml`，`note` 字段可以写成本、计划等备注，会显示在报告里。
+编辑 `watchlist.yaml`。每只票可标 `mode`（swing 抄底波段 / trend 趋势长拿 / event 财报事件票）和
+`cost`（平均成本——填了就视为持仓，报告给卖出侧建议）。字段说明见文件头部注释。
+
+**模式化建议引擎（advice.py）**：大盘状态（panic/bull/range/bear）决定当下哪些动作可开火——
+恐慌期抄底全开；多头市压制个股独跌抄底（回测该情形胜率仅32%）；震荡市允许持仓在强压力+RSI过热处
+轮动减1/3（卖出时同时给出"接回位"和"突破追回位"双条件）；空头市只做70+极端恐慌。
+持仓票按模式给卖出建议：swing 看 TP/无效位；trend 只看趋势破坏（连续2日收低于50日线或破移动止损）；
+所有模式财报前3天自动提示降风险。`uv run market-lab advise TICKER` 单票查询。
 
 ## 方法说明
 

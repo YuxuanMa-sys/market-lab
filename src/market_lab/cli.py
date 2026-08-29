@@ -24,6 +24,9 @@ def main() -> None:
 
     sub.add_parser("alerts", help="盘中检查：谁进入了进场参考区(供定时任务调用)")
 
+    p_ad = sub.add_parser("advise", help="单票模式化买卖建议(结合大盘状态和持仓)")
+    p_ad.add_argument("ticker")
+
     args = ap.parse_args()
 
     if args.cmd == "analyze":
@@ -40,6 +43,20 @@ def main() -> None:
         html_path, json_path = generate(args.session)
         print(f"HTML: {html_path}")
         print(f"JSON: {json_path}")
+    elif args.cmd == "advise":
+        from .advice import advise, market_mode
+        from .market import overview
+        from .report import load_watchlist
+        from .stock import analyze
+        t = args.ticker.upper()
+        mkt = overview()
+        a = analyze(t)
+        item = next((i for i in load_watchlist() if i["symbol"] == t), {})
+        mmode, desc = market_mode(mkt)
+        a["advice"] = advise(a, item, mmode)
+        json.dump({"market_mode": desc, "ticker": t, "advice": a["advice"],
+                   "plan": a["plan"], "dip": a["dip"]}, sys.stdout, ensure_ascii=False, indent=1, default=str)
+        print()
     elif args.cmd == "alerts":
         from .alerts import check
         from .report import load_watchlist

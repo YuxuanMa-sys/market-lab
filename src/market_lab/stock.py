@@ -115,9 +115,22 @@ def analyze(ticker: str, with_news: bool = True, with_short: bool = True) -> dic
 
     res_chain = [z.to_dict(price) for z in resistances[:4]]
 
+    # 趋势模式(trend)用的跟踪字段：移动止损 = 60日最高点回落2.75ATR；连续低于50日线天数
+    trail_stop = round(float(df["High"].tail(60).max()) - 2.75 * a, 2)
+    below_streak = 0
+    if len(df) >= 50:
+        cond = (close < sma(close, 50)).values
+        for v in cond[::-1]:
+            if v:
+                below_streak += 1
+            else:
+                break
+
     out = {
         "ticker": ticker,
         "price": round(price, 2),
+        "trail_stop": trail_stop,
+        "below_ma50_streak": int(below_streak),
         "chg_pct": round((price / prev - 1) * 100, 2),
         "atr": round(a, 2),
         "rsi": round(r, 1),
