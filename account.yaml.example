@@ -1,0 +1,8 @@
+# 复制为 account.yaml 使用。account.yaml 已在 .gitignore 里，只存在你本地——
+# 云端简报只用百分比工作，账户金额不离开这台机器。
+#
+# total_value: 账户总市值(美元)。填了之后本地报告的挂单会直接给股数和金额。
+# high_water:  账户历史最高市值。当 total_value < high_water × 0.92（回撤超8%）时，
+#              单笔风险自动减半（连败熔断）。不填则用 total_value 初始化。
+total_value: 50000
+high_water: 50000

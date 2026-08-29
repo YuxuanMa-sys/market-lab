@@ -12,6 +12,7 @@ from jinja2 import Template
 
 from . import data, market, stock
 from .advice import ACTION_URGENCY, URGENT_ACTIONS, advise, market_mode
+from .sizing import apply_sizing
 
 ROOT = Path(__file__).resolve().parents[2]
 REPORTS_DIR = ROOT / "reports"
@@ -103,10 +104,19 @@ tr:last-child td { border-bottom: none; }
 <tr><td><b>{{ r.ticker }}</b></td>
 <td>{% if r.pnl_pct is not none %}持仓 {{ "%+.1f%%"|format(r.pnl_pct) }}{% else %}候选{% endif %}</td>
 <td><b>{{ r.action }}</b></td>
-<td>{% for o in r.orders %}{{ o.side }}·{{ o.type }} <b>{{ o.price }}</b>（{{ o.portion }}）{{ o.note }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
+<td>{% for o in r.orders %}{{ o.side }}·{{ o.type }} <b>{{ o.price }}</b>（{{ o.portion }}{% if o.pct is defined and o.pct %} ≈ {{ o.pct }}%仓{% endif %}{% if o.shares is defined and o.shares %} ≈ {{ o.shares }}股{% elif o.usd is defined and o.usd %} ≈ ${{ o.usd }}{% endif %}）{{ o.note }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
 {% endfor %}
 </table>
 <div class="muted">其余 {{ n_noop }} 只今日无操作。挂单价为区间代表值，可在区间内酌情微调；止损单建议用 GTC。</div>
+</div>
+
+<div class="card">
+  <b>风险仪表盘</b>　总开放风险 <b>{{ risk.open_risk_pct }}%</b>/{{ risk.open_risk_cap|int }}%
+  {% if risk.cash_pct is not none %}　现金 <b>{{ risk.cash_pct }}%</b>{% endif %}
+  　单笔风险 {{ risk.risk_per_trade }}%{% if risk.throttled %}（⛔熔断减半中）{% endif %}
+  <div class="muted" style="margin-top:4px">簇占比：{% for c, v in risk.cluster_sums.items() %}{{ c }} {{ v }}%{% if not loop.last %} · {% endif %}{% endfor %}（簇上限 {{ risk.cluster_cap|int }}%）
+  {% if not risk.has_account_file %}<br>提示：本地未找到 account.yaml，挂单只显示仓位%不显示股数（云端属正常）{% endif %}</div>
+  {% for w in risk.warnings %}<div class="event">{{ w }}</div>{% endfor %}
 </div>
 {% endif %}
 
@@ -271,6 +281,8 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         -s["dip"]["score"],
     ))
 
+    risk_dashboard = apply_sizing(ok_stocks, wl_by_symbol)
+
     order_sheet = [
         {"ticker": s["ticker"], "action": s["advice"]["action"],
          "pnl_pct": s["advice"].get("pnl_pct"), "orders": s["advice"]["orders"]}
@@ -294,6 +306,7 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         urgent_actions=URGENT_ACTIONS,
         order_sheet=order_sheet,
         n_noop=n_noop,
+        risk=risk_dashboard,
         stocks=ok_stocks,
         err_stocks=[s for s in stocks if "error" in s],
         earnings=earnings,
@@ -311,7 +324,7 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     html_path.write_text(html, encoding="utf-8")
     json_path.write_text(
         json.dumps(
-            {"market_mode": mmode_desc, "order_sheet": order_sheet,
+            {"market_mode": mmode_desc, "order_sheet": order_sheet, "risk_dashboard": risk_dashboard,
              "market": mkt, "stocks": stocks, "earnings": earnings},
             ensure_ascii=False, indent=1, default=str,
         ),

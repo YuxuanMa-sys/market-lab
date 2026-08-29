@@ -1,0 +1,14 @@
+# 相关性簇：同簇的票同涨同跌，合计仓位受簇上限约束（默认40%）。
+# 不在任何簇里的票归入"其他"。可自行增删改。
+AI算力半导体:
+  [NBIS, CRWV, IREN, AMAT, KLAC, MU, LITE, COHR, FN, AMKR, FORM, SNDK, INTC, DELL, SOXX, MRVL, GLW, HUT, NVDA, AVGO, SMCI, ANET, VRT, LRCX, TSM]
+核电电力:
+  [SMR, NNE, POWL, LEU, VST, GEV, OKLO, CEG]
+太空国防:
+  [RKLB, ASTS, SPCX, KTOS, AVAV, ONDS]
+加密金融:
+  [COIN, CRCL, HOOD, SOFI, MSTR]
+医疗健康:
+  [BSX, VKTX, SMMT, TEM, NTLA]
+大盘蓝筹:
+  [GOOGL, CSCO, WMT, AAPL, MSFT, META, AMZN]
