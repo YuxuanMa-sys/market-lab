@@ -27,6 +27,9 @@ def main() -> None:
     p_ad = sub.add_parser("advise", help="单票模式化买卖建议(结合大盘状态和持仓)")
     p_ad.add_argument("ticker")
 
+    p_corr = sub.add_parser("corr", help="候选票与当前持仓组合的1年日收益相关性(分散度检验)")
+    p_corr.add_argument("tickers", nargs="+")
+
     args = ap.parse_args()
 
     if args.cmd == "analyze":
@@ -57,6 +60,32 @@ def main() -> None:
         json.dump({"market_mode": desc, "ticker": t, "advice": a["advice"],
                    "plan": a["plan"], "dip": a["dip"]}, sys.stdout, ensure_ascii=False, indent=1, default=str)
         print()
+    elif args.cmd == "corr":
+        import pandas as pd
+        from . import data
+        from .report import load_watchlist
+        pos = {i["symbol"]: float(i["pct"]) for i in load_watchlist()
+               if i.get("cost") is not None and i.get("pct")}
+        if not pos:
+            print(json.dumps({"error": "watchlist 里没有带 pct 的持仓，无法构建组合基准"}, ensure_ascii=False))
+            return
+        frames = {}
+        for t, w in pos.items():
+            try:
+                frames[t] = data.get_daily(t, "1y")["Close"].pct_change() * w
+            except Exception:
+                continue
+        basket = pd.DataFrame(frames).sum(axis=1) / sum(pos.values())
+        out = {}
+        for t in args.tickers:
+            t = t.upper()
+            try:
+                r = data.get_daily(t, "1y")["Close"].pct_change()
+                c = pd.concat([basket, r], axis=1, sort=True).dropna().corr().iloc[0, 1]
+                out[t] = round(float(c), 2)
+            except Exception as e:
+                out[t] = f"FAIL: {e}"
+        print(json.dumps({"corr_vs_持仓组合": out, "阈值参考": "<0.4 好, 0.4-0.5 边缘, >0.5 不建议"}, ensure_ascii=False, indent=1))
     elif args.cmd == "alerts":
         from .alerts import check
         from .report import load_watchlist
