@@ -214,22 +214,47 @@ def has_polygon() -> bool:
     return bool(os.environ.get("POLYGON_API_KEY"))
 
 
+CTB_ENRICH_THRESHOLD = 8.0  # SI占股本%超过此值才花 Ortex credits 补借券费率
+
+
 def get_short_stats(ticker: str) -> dict | None:
-    """空头状态（Ortex）。EOD 数据按最近交易日缓存（周末不重取），省 credits；失败返回 None 自动降级。"""
-    if not os.environ.get("ORTEX_API_KEY"):
+    """空头状态。主力 = Polygon(含在套餐里,不限调用)：官方SI/回补天数/每日做空量占比；
+    Ortex 降级为增强：仅对高做空票补借券费率(每票1次调用)。按最近交易日缓存。"""
+    if not has_polygon() and not os.environ.get("ORTEX_API_KEY"):
+        return None
+    if not _is_stock(ticker):
         return None
     d = _now_ct().date()
     while d.weekday() >= 5:
         d -= timedelta(days=1)
-    p = CACHE_DIR / f"short_{ticker}_{d.isoformat()}.pkl"
+    p = CACHE_DIR / f"shortv2_{ticker}_{d.isoformat()}.pkl"
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     if p.exists():
         return pd.read_pickle(p)
-    try:
-        from .providers import ortex
-        s = ortex.short_stats(ticker)
-    except Exception:
-        return None  # 网络/限流等瞬时失败不缓存，下次再试
+
+    s = None
+    if has_polygon():
+        try:
+            from .providers import polygon
+            s = polygon.get_short_stats(ticker)
+        except Exception:
+            s = None
+    if s is None and os.environ.get("ORTEX_API_KEY"):
+        try:
+            from .providers import ortex
+            s = ortex.short_stats(ticker)  # Polygon 不可用时的整套回退
+        except Exception:
+            return None
+
+    if s and os.environ.get("ORTEX_API_KEY") and (s.get("si_pct_out") or s.get("si_pct_float") or 0) >= CTB_ENRICH_THRESHOLD:
+        try:
+            from .providers import ortex
+            ctb = ortex.ctb_only(ticker)
+            if ctb is not None:
+                s["ctb_new"] = ctb
+        except Exception:
+            pass
+
     pd.to_pickle(s, p)  # 成功结果都缓存，包括"无数据"(None)，避免同日反复打 API
     return s
 

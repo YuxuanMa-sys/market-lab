@@ -142,7 +142,7 @@ VIX {{ mkt.vix.value }}（2年 {{ mkt.vix.percentile_2y|int }}% 分位{% if mkt.
     <span class="badge">{{ s.trend }}</span>
     <span class="badge">RSI {{ s.rsi }}</span>
     <span class="badge">抄底分 {{ s.dip.score|int }} · {{ s.dip.band }}</span>
-    {% if s.short and s.short.si_pct_float is not none %}<span class="badge">空头: SI {{ s.short.si_pct_float }}%流通盘{% if s.short.si_trend_3w is not none %}（3周{{ "%+.2f"|format(s.short.si_trend_3w) }}）{% endif %}{% if s.short.ctb_new is defined and s.short.ctb_new is not none %} · 借券费 {{ s.short.ctb_new }}%{% endif %}{% if s.short.dtc is defined and s.short.dtc is not none %} · 回补需 {{ s.short.dtc }}天{% endif %}</span>{% endif %}
+    {% if s.short %}<span class="badge">空头:{% if s.short.si_pct_out is defined and s.short.si_pct_out is not none %} SI {{ s.short.si_pct_out }}%股本{% if s.short.si_change_pct is defined and s.short.si_change_pct is not none %}（上期{{ "%+.1f%%"|format(s.short.si_change_pct) }}）{% endif %}{% elif s.short.si_pct_float is defined and s.short.si_pct_float is not none %} SI {{ s.short.si_pct_float }}%流通盘{% endif %}{% if s.short.dtc is defined and s.short.dtc %} · 回补{{ s.short.dtc }}天{% endif %}{% if s.short.svr_5d is defined and s.short.svr_5d %} · 日做空量{{ s.short.svr_5d }}%(5日均){% endif %}{% if s.short.ctb_new is defined and s.short.ctb_new is not none %} · 借券费{{ s.short.ctb_new }}%{% endif %}</span>{% endif %}
     {% if s.note %}<span class="muted">备注: {{ s.note }}</span>{% endif %}
   </div>
   {% if s.advice %}

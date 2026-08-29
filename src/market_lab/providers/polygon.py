@@ -58,6 +58,64 @@ def get_quote(ticker: str) -> dict:
     }
 
 
+def get_short_stats(ticker: str) -> dict | None:
+    """空头数据（含在股票套餐里，不限调用）：官方双周 SI + 回补天数 + 每日做空量占比。
+
+    与 Ortex 的差别：SI 是交易所官方数据(滞后~2周)而非日频估计；口径是占总股本%而非流通盘%；
+    没有借券费率(CTB)——那是 Ortex 仅存的独家价值，由 data 层按需增强。
+    """
+    sym = _sym(ticker)
+    today = date.today()
+    j = _get(
+        "/stocks/v1/short-interest", ticker=sym, limit=10,
+        **{"settlement_date.gte": (today - timedelta(days=75)).isoformat()},
+    )
+    rows = sorted(j.get("results", []), key=lambda r: r.get("settlement_date", ""))
+    if not rows:
+        return None
+    last = rows[-1]
+    prev = rows[-2] if len(rows) > 1 else None
+    si = last.get("short_interest")
+
+    si_pct = None
+    try:
+        ov = _get(f"/v3/reference/tickers/{sym}").get("results", {})
+        shares = ov.get("share_class_shares_outstanding") or ov.get("weighted_shares_outstanding")
+        if si and shares:
+            si_pct = round(si / shares * 100, 2)
+    except Exception:
+        pass
+
+    si_change = None
+    if prev and prev.get("short_interest"):
+        si_change = round((si - prev["short_interest"]) / prev["short_interest"] * 100, 1)
+
+    svr_last = svr_5d = None
+    try:
+        sv = _get(
+            "/stocks/v1/short-volume", ticker=sym, limit=10,
+            **{"date.gte": (today - timedelta(days=12)).isoformat()},
+        )
+        svr = sorted(sv.get("results", []), key=lambda r: r.get("date", ""))
+        if svr:
+            svr_last = round(svr[-1]["short_volume_ratio"], 1)
+            tail = svr[-5:]
+            svr_5d = round(sum(r["short_volume_ratio"] for r in tail) / len(tail), 1)
+    except Exception:
+        pass
+
+    return {
+        "si_pct_out": si_pct,                 # SI 占总股本%（官方口径，注意不是流通盘%）
+        "si_shares": si,
+        "si_change_pct": si_change,           # 相对上一期(两周前)的变化%
+        "dtc": last.get("days_to_cover"),
+        "settlement_date": last.get("settlement_date"),
+        "svr_last": svr_last,                 # 最新交易日做空量占总成交量%
+        "svr_5d": svr_5d,                     # 5日均做空量占比
+        "source": "polygon",
+    }
+
+
 def get_option_walls(ticker: str, price: float, days: int = 45, top_n: int = 3) -> dict | None:
     """期权持仓墙：近45天到期、现价±25%内，按行权价聚合持仓量(OI)。
 

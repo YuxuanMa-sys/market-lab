@@ -22,28 +22,40 @@ tickers:
   - symbol: NNE
     note: ""
   - symbol: IREN
+    cost: 39.53
     note: ""
   - symbol: WMT
     note: ""
   - symbol: CBRS
+    cost: 187.78
+    note: ""
+  - symbol: AMAT
+    cost: 479.94
     note: ""
   - symbol: SNDK
     note: ""
   - symbol: GOOGL
+    cost: 355.88
+    note: ""
+  - symbol: BSX
+    cost: 46.77
     note: ""
   - symbol: MU
     note: ""
   - symbol: NBIS
+    cost: 245.47
     note: ""
   - symbol: GLW
     note: ""
   - symbol: CSCO
     note: ""
   - symbol: ASTS
+    cost: 61.42
     note: ""
   - symbol: KLAC
     note: ""
   - symbol: CRWV
+    cost: 89.52
     note: ""
   - symbol: FORM
     note: ""
@@ -58,10 +70,12 @@ tickers:
   - symbol: SOXX
     note: ""
   - symbol: RKLB
+    cost: 69.01
     note: ""
   - symbol: COIN
     note: ""
   - symbol: LITE
+    cost: 906
     note: ""
   - symbol: SPCX
     note: ""

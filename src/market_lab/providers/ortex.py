@@ -42,6 +42,14 @@ def _latest_rows(path: str, days: int = 21) -> tuple[list[dict], dict]:
     return rows, j
 
 
+def ctb_only(ticker: str) -> float | None:
+    """只取最新借券费率(1次调用≈1.2 credits)——Polygon 接管 SI/DTC/做空量后，CTB 是 Ortex 仅存的独家数据。"""
+    rows, _ = _latest_rows(f"/stock/us/{ticker}/ctb/new")
+    if rows and rows[-1].get("costToBorrowNew") is not None:
+        return round(rows[-1]["costToBorrowNew"], 2)
+    return None
+
+
 def short_stats(ticker: str) -> dict | None:
     rows, envelope = _latest_rows(f"/stock/us/{ticker}/short_interest")
     if not rows:
