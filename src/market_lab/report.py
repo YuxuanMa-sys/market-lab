@@ -94,6 +94,22 @@ tr:last-child td { border-bottom: none; }
   <div class="gauge" style="margin-top:8px">当前调度模式：<b>{{ mmode_desc }}</b></div>
 </div>
 
+{% if order_sheet %}
+<h2>📋 今日操作单</h2>
+<div class="card scroll">
+<table>
+<tr><th>票</th><th>身份</th><th>动作</th><th>挂单（份额为该票计划仓位的比例）</th></tr>
+{% for r in order_sheet %}
+<tr><td><b>{{ r.ticker }}</b></td>
+<td>{% if r.pnl_pct is not none %}持仓 {{ "%+.1f%%"|format(r.pnl_pct) }}{% else %}候选{% endif %}</td>
+<td><b>{{ r.action }}</b></td>
+<td>{% for o in r.orders %}{{ o.side }}·{{ o.type }} <b>{{ o.price }}</b>（{{ o.portion }}）{{ o.note }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
+{% endfor %}
+</table>
+<div class="muted">其余 {{ n_noop }} 只今日无操作。挂单价为区间代表值，可在区间内酌情微调；止损单建议用 GTC。</div>
+</div>
+{% endif %}
+
 <h2>指数与隔夜</h2>
 <div class="card scroll">
 <table>
@@ -149,7 +165,7 @@ VIX {{ mkt.vix.value }}（2年 {{ mkt.vix.percentile_2y|int }}% 分位{% if mkt.
   <div class="advice{{ ' urgent' if s.advice.action in urgent_actions else '' }}">
     🎯 <b>{{ s.advice.action }}</b>{% if s.advice.pnl_pct is defined and s.advice.pnl_pct is not none %} <b>[持仓 · {{ s.advice.mode }} · 浮盈 {{ "%+.1f%%"|format(s.advice.pnl_pct) }}]</b>{% else %}（{{ s.advice.mode }}）{% endif %}
     — {{ s.advice.reasons|join("；") }}
-    {% if s.advice.tranches %}<div class="muted">分批参考：1/3 @ {{ s.advice.tranches.t1 }} · 1/3 @ {{ s.advice.tranches.t2 }} · 1/3 @ {{ s.advice.tranches.t3 }}</div>{% endif %}
+    {% if s.advice.orders %}<div class="muted" style="margin-top:4px">{% for o in s.advice.orders %}📌 {{ o.side }}·{{ o.type }} @ <b>{{ o.price }}</b>（{{ o.portion }}）{{ o.note }}{% if not loop.last %}<br>{% endif %}{% endfor %}</div>{% endif %}
   </div>
   {% endif %}
   {% if s.earnings_date %}<div class="event">📅 {{ s.earnings_date }} 财报——财报跳空会直接跳过支撑位，财报前带杠杆过夜等于赌跳空</div>{% endif %}
@@ -255,6 +271,13 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         -s["dip"]["score"],
     ))
 
+    order_sheet = [
+        {"ticker": s["ticker"], "action": s["advice"]["action"],
+         "pnl_pct": s["advice"].get("pnl_pct"), "orders": s["advice"]["orders"]}
+        for s in ok_stocks if s["advice"].get("orders")
+    ]
+    n_noop = len(ok_stocks) - len(order_sheet)
+
     wl_symbols = {item["symbol"] for item in load_watchlist()}
     earnings = [e for e in data.get_earnings_calendar(14) if e.get("symbol") in wl_symbols]
     edates = {e["symbol"]: e["date"] for e in earnings}
@@ -269,6 +292,8 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         mkt=mkt,
         mmode_desc=mmode_desc,
         urgent_actions=URGENT_ACTIONS,
+        order_sheet=order_sheet,
+        n_noop=n_noop,
         stocks=ok_stocks,
         err_stocks=[s for s in stocks if "error" in s],
         earnings=earnings,
@@ -286,7 +311,8 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     html_path.write_text(html, encoding="utf-8")
     json_path.write_text(
         json.dumps(
-            {"market_mode": mmode_desc, "market": mkt, "stocks": stocks, "earnings": earnings},
+            {"market_mode": mmode_desc, "order_sheet": order_sheet,
+             "market": mkt, "stocks": stocks, "earnings": earnings},
             ensure_ascii=False, indent=1, default=str,
         ),
         encoding="utf-8",
