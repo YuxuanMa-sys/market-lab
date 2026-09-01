@@ -18,6 +18,8 @@
 #     note: "AI核心仓"
 tickers:
   - symbol: SMR
+    cost: 9.84
+    pct: 3.83
     note: ""
   - symbol: MRVL
     note: ""
@@ -62,6 +64,8 @@ tickers:
     pct: 4.77
     note: ""
   - symbol: KLAC
+    cost: 199.78
+    pct: 3.55
     note: ""
   - symbol: CRWV
     cost: 89.52
@@ -74,6 +78,8 @@ tickers:
   - symbol: COHR
     note: ""
   - symbol: FN
+    cost: 498.72
+    pct: 3.37
     note: ""
   - symbol: AMKR
     note: ""
@@ -84,6 +90,8 @@ tickers:
     pct: 5.29
     note: ""
   - symbol: COIN
+    cost: 183.64
+    pct: 3.67
     note: ""
   - symbol: LITE
     cost: 906
