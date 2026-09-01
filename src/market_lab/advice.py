@@ -71,7 +71,12 @@ def _build_orders(res: dict, a: dict, cost: float | None, mmode: str) -> None:
             orders.append(_o("卖", "限价", price * 0.995, "全部", "尽快离场，挂现价下方一点保证成交"))
         elif act == "止盈减仓":
             orders.append(_o("卖", "限价", price, "1/3", "已在止盈区，即市附近卖出"))
-            orders.append(_o("卖", "止损", cost, "剩余", "止损提到保本价，让剩余仓位零风险奔跑"))
+            # 锁盈位取"保本价"与"TP1下沿-0.75ATR"的更低者：cost 可能被 wash sale 抬高到
+            # 止盈区之上，直接挂保本价会挂在现价上方立刻触发
+            lock = cost
+            if targets:
+                lock = min(cost, targets[0]["low"] - 0.75 * a["atr"])
+            orders.append(_o("卖", "止损", lock, "剩余", "锁盈位（保本价与TP1下方0.75ATR取低者），让剩余仓位低风险奔跑"))
         elif act == "轮动减仓" and res.get("_rotation"):
             r = res["_rotation"]
             orders.append(_o("卖", "限价", r["sell"], "1/3", "压力区+过热，先落袋"))
