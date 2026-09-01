@@ -56,11 +56,16 @@ def generate_signals(ticker: str, period: str = "5y") -> tuple[pd.DataFrame | No
         entry_zone = strong[0] if strong else None
         if entry_zone is None or not (entry_zone is inside or price <= entry_zone.high * 1.005):
             continue
+        tp1 = None
+        for z in sorted(zones, key=lambda zz: zz.mid):
+            if z.low > entry_zone.high and z.score >= 3.5 and (z.low / price - 1) >= 0.03:
+                tp1 = float(z.low)
+                break
         signals.append({
             "ticker": ticker, "i": i, "date": str(df.index[i].date()),
             "score": d["score"], "price": price, "atr": a,
             "zone_low": float(entry_zone.low), "zone_high": float(entry_zone.high),
-            "atr_pct": a / price,
+            "atr_pct": a / price, "tp1": tp1,
         })
     return df, signals
 
@@ -230,6 +235,108 @@ def full_analysis(tickers: list[str], period: str = "5y") -> dict:
         "entries": base,
     }
     return result
+
+
+# ---------- 出场策略锦标赛：同一信号集打擂台 ----------
+
+def _eval_exit(sig: dict, arrs: tuple, *, target: float | None = None,
+               chand_k: float | None = None, half_at: float | None = None,
+               time_n: int | None = None, timeout: int = TIMEOUT_DAYS) -> tuple[float, int]:
+    """通用出场模拟：支持固定目标/吊灯移动止损/减半后追踪/时间止损的任意组合。
+    返回 (总收益%, 持有天数)。跳空按开盘成交；同日先查止损(保守口径)。"""
+    close, high, low, opn = arrs
+    i, e, a = sig["i"], sig["price"], sig["atr"]
+    stop0 = sig["zone_low"] - (1.0 if sig["score"] >= 70 else 0.75) * a
+    pos, realized, maxc = 1.0, 0.0, e
+    end = min(i + timeout, len(close) - 1)
+    for j in range(i + 1, end + 1):
+        cur_stop = stop0
+        if chand_k is not None:
+            cur_stop = max(cur_stop, maxc - chand_k * a)
+        if float(low[j]) <= cur_stop:
+            fill = min(cur_stop, float(opn[j]))
+            realized += pos * (fill / e - 1)
+            return realized * 100, j - i
+        if half_at is not None and pos == 1.0 and float(high[j]) >= half_at:
+            fill = max(half_at, float(opn[j]))
+            realized += 0.5 * (fill / e - 1)
+            pos = 0.5
+        if target is not None and pos > 0 and float(high[j]) >= target:
+            fill = max(target, float(opn[j]))
+            realized += pos * (fill / e - 1)
+            return realized * 100, j - i
+        maxc = max(maxc, float(close[j]))
+        if time_n is not None and j - i >= time_n and pos > 0:
+            realized += pos * (float(close[j]) / e - 1)
+            return realized * 100, j - i
+    realized += pos * (float(close[end]) / e - 1)
+    return realized * 100, end - i
+
+
+def _policy_params(name: str, sig: dict) -> dict:
+    e = sig["price"]
+    tp1 = sig.get("tp1") or e * 1.10
+    return {
+        "fixed10": {"target": e * 1.10},
+        "tp1zone": {"target": tp1},
+        "half_trail": {"half_at": tp1, "chand_k": 2.5},
+        "chand20": {"chand_k": 2.0},
+        "chand25": {"chand_k": 2.5},
+        "chand30": {"chand_k": 3.0},
+        "time10": {"target": e * 1.10, "time_n": 10},
+        "time15": {"target": e * 1.10, "time_n": 15},
+        "time20": {"target": e * 1.10, "time_n": 20},
+    }[name]
+
+
+EXIT_POLICIES = ["fixed10", "tp1zone", "half_trail", "chand20", "chand25", "chand30",
+                 "time10", "time15", "time20"]
+
+
+def exit_tournament(tickers: list[str], period: str = "5y", min_score: float = 55.0) -> dict:
+    results: dict[str, list] = {p: [] for p in EXIT_POLICIES}
+    for t in tickers:
+        try:
+            df, sigs = generate_signals(t, period)
+        except Exception:
+            continue
+        if df is None:
+            continue
+        arrs = (df["Close"].values, df["High"].values, df["Low"].values, df["Open"].values)
+        sigs = [s for s in sigs if s["score"] >= min_score]
+        for p in EXIT_POLICIES:
+            next_ok = 0
+            for s in sigs:
+                if s["i"] < next_ok:
+                    continue
+                ret, days = _eval_exit(s, arrs, **_policy_params(p, s))
+                results[p].append({"date": s["date"], "ret": ret, "days": days})
+                next_ok = s["i"] + days + 1
+
+    def stats(rows):
+        if not rows:
+            return {"n": 0}
+        n = len(rows)
+        avg = sum(r["ret"] for r in rows) / n
+        days = sum(r["days"] for r in rows) / n
+        return {
+            "n": n,
+            "win_rate": round(sum(r["ret"] > 0 for r in rows) / n * 100, 1),
+            "avg_ret_pct": round(avg, 2),
+            "avg_days": round(days, 1),
+            "ret_per_day": round(avg / max(days, 0.1), 3),
+        }
+
+    out = {}
+    for p, rows in results.items():
+        dates = sorted(r["date"] for r in rows)
+        mid = dates[len(dates) // 2] if dates else ""
+        out[p] = {
+            "overall": stats(rows),
+            "first_half": stats([r for r in rows if r["date"] < mid]),
+            "second_half": stats([r for r in rows if r["date"] >= mid]),
+        }
+    return out
 
 
 # v1 兼容入口

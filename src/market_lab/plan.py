@@ -58,10 +58,12 @@ def trade_plan(a: dict) -> dict:
         tp_ladder.append(z)
 
     def _tp(z: dict) -> dict:
+        mid = round((z["low"] + z["high"]) / 2, 2)
         return {
-            "low": z["low"], "high": z["high"], "score": z["score"],
-            # 卖在区间下沿：抛压从下沿就开始，不赌能穿到区间上沿
-            "pct_from_entry": round((z["low"] / entry_mid - 1) * 100, 1),
+            "low": z["low"], "high": z["high"], "mid": mid, "score": z["score"],
+            # 卖在区间中部(2026-09-01回测校准)：反转前扎入压力区的中位深度0.83，
+            # 卖下沿被证实过于保守(每笔期望1.28% vs 固定+10%的2.00%)；中部是兼顾成交率的半步
+            "pct_from_entry": round((mid / entry_mid - 1) * 100, 1),
         }
 
     # TP1 = 路上第一道强压力；TP2 = +10% 之外最近的强区（有的话），而不是盲取第二近的
@@ -80,14 +82,14 @@ def trade_plan(a: dict) -> dict:
         reward_ref = fallback_target
     else:
         if targets[0]["pct_from_entry"] >= PREF_MIN_PCT:
-            reward_ref = targets[0]["low"]
+            reward_ref = targets[0]["mid"]
             target_note = f"TP1 就在 +{PREF_MIN_PCT:.0f}% 之外，数据目标与你的偏好一致"
         elif beyond is not None:
             # 简报建议"TP1减一部分、剩余看TP2"，盈亏比就按实际建议的持有目标(TP2)算
-            reward_ref = beyond["low"]
+            reward_ref = round((beyond["low"] + beyond["high"]) / 2, 2)
             target_note = f"TP1 不足 +{PREF_MIN_PCT:.0f}%：参考在 TP1 先减一部分，剩余看 TP2（+{PREF_MIN_PCT:.0f}% 之外最近的强区）"
         else:
-            reward_ref = targets[0]["low"]
+            reward_ref = targets[0]["mid"]
             target_note = f"已识别的上方强区间都在 +{PREF_MIN_PCT:.0f}% 以内，想拿满需要突破配合——TP1 的抛压是第一道坎"
 
     in_entry_zone = (entry is inside) or price <= entry["high"] * 1.005

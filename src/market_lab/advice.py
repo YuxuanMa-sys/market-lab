@@ -20,11 +20,11 @@ from datetime import date, datetime
 ACTION_URGENCY = {
     "清仓认错": 0, "趋势破坏-离场": 0,
     "止盈减仓": 1, "财报降风险": 1,
-    "轮动减仓": 2, "警戒持有": 3,
+    "轮动减仓": 2, "时间止损": 2, "警戒持有": 3,
     "进场分批": 4, "临近挂单": 4, "持有": 5,
     "等待": 6, "回避": 7,
 }
-URGENT_ACTIONS = {"清仓认错", "趋势破坏-离场", "止盈减仓", "财报降风险", "轮动减仓"}
+URGENT_ACTIONS = {"清仓认错", "趋势破坏-离场", "止盈减仓", "财报降风险", "轮动减仓", "时间止损"}
 
 
 def market_mode(mkt: dict) -> tuple[str, str]:
@@ -92,11 +92,14 @@ def _build_orders(res: dict, a: dict, cost: float | None, mmode: str) -> None:
                 ts = a.get("trail_stop")
                 if ts:
                     orders.append(_o("卖", "止损", ts, "全部", "移动止损(60日高-2.75ATR)，每周只上移不下移"))
+            elif act == "时间止损":
+                orders.append(_o("卖", "限价", price, "全部", "时间止损：15个交易日未达标，离场换弹"))
             else:
                 if inv:
                     orders.append(_o("卖", "止损", inv, "全部", "无效位止损单(GTC)，跌破自动离场"))
                 if targets:
-                    orders.append(_o("卖", "限价", targets[0]["low"], "1/3", "TP1 止盈单(GTC)"))
+                    tp_price = targets[0].get("mid", targets[0]["low"])
+                    orders.append(_o("卖", "限价", tp_price, "1/3", "TP1 止盈单(GTC)，挂压力区中部(回测:卖下沿过于保守)"))
     else:
         if act == "进场分批" and res.get("tranches"):
             tr = res["tranches"]
@@ -186,6 +189,17 @@ def advise(a: dict, item: dict, mmode: str) -> dict:
                     res["reasons"].append(
                         f"位于无效位 {invalid} 与 TP1 {targets[0]['low']} 之间，计划未走完（浮盈 {pnl:+.1f}%）"
                     )
+
+        # 时间止损(2026-09-01锦标赛校准)：+10%目标叠加"15个交易日未达标离场"后，
+        # 资金效率从0.272%/天升至0.298%/天且胜率略升；超时滞留仓位是负期望(-0.5%/笔)
+        since = item.get("since")
+        if since and mode in ("swing", "event") and res["action"] == "持有":
+            held_days = _days_to(str(since))
+            if held_days is not None and -held_days >= 21:  # ≈15个交易日
+                res["action"] = "时间止损"
+                res["reasons"] = [
+                    f"持仓已 {-held_days} 天(≈15+交易日)仍未到 TP1（浮盈 {pnl:+.1f}%）——回测：拖过15个交易日的仓位期望衰减为负，资金效率优先，参考离场换弹",
+                ]
 
         # E 轮动叠加：仅震荡市、仅盈利单、仅强压力+过热、且当前无更紧急动作
         if mmode == "range" and res["action"] == "持有" and pnl >= 5:

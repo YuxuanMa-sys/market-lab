@@ -25,6 +25,9 @@ def main() -> None:
     p_lbt = sub.add_parser("levelbt", help="位置质量回测：支撑区守住率按强度分桶(引擎改动的裁判)")
     p_lbt.add_argument("--period", default="5y")
     p_lbt.add_argument("--tag", default="run")
+    p_lbt.add_argument("--side", default="sup", choices=["sup", "res"])
+
+    sub.add_parser("exitbt", help="出场策略锦标赛：同一信号集上对比9种止盈/止损策略")
 
     sub.add_parser("alerts", help="盘中检查：谁进入了进场参考区(供定时任务调用)")
 
@@ -101,8 +104,18 @@ def main() -> None:
         from .levelbt import run as lrun
         from .report import load_watchlist
         tickers = [x["symbol"] for x in load_watchlist()]
-        result = lrun(tickers, period=args.period)
+        result = lrun(tickers, period=args.period, side=args.side)
         out = Path(__file__).resolve().parents[2] / "reports" / f"levelbt-{date.today().isoformat()}-{args.tag}.json"
+        out.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(json.dumps(result, ensure_ascii=False, indent=1))
+    elif args.cmd == "exitbt":
+        from pathlib import Path
+        from datetime import date
+        from .backtest import exit_tournament
+        from .report import load_watchlist
+        tickers = [x["symbol"] for x in load_watchlist()]
+        result = exit_tournament(tickers)
+        out = Path(__file__).resolve().parents[2] / "reports" / f"exitbt-{date.today().isoformat()}.json"
         out.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
         print(json.dumps(result, ensure_ascii=False, indent=1))
     elif args.cmd == "backtest":

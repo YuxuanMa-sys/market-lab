@@ -73,12 +73,72 @@ def aggregate(samples: list[dict]) -> dict:
     return out
 
 
-def run(tickers: list[str], period: str = "5y") -> dict:
+def run_ticker_res(ticker: str, period: str = "5y") -> list[dict]:
+    """压力侧：价格逼近压力区后，"先回落1ATR"(反转)的概率 + 反转前扎入区间的深度。
+    深度分布回答"止盈该卖在区间下沿还是更深处"。"""
+    df = data.get_daily(ticker, period)
+    if len(df) < MIN_BARS:
+        return []
+    close = df["Close"].values
+    high = df["High"].values
+    low = df["Low"].values
+    atr_s = atr(df).values
+    samples = []
+    for i in range(300, len(df) - 5, STEP):
+        window = df.iloc[: i + 1]
+        price = float(close[i])
+        a = float(atr_s[i]) or 1e-9
+        try:
+            zones, _ = build_zones(window)
+        except Exception:
+            continue
+        _, res, _ = split_zones(zones, price)
+        for z in res:
+            if (z.mid - price) / price > NEAR_PCT:
+                continue
+            end = min(i + 1 + HORIZON, len(df))
+            for j in range(i + 1, end):
+                if high[j] >= z.low:  # 第一次触及
+                    entry = max(float(close[j]), z.low)
+                    width = max(z.high - z.low, 1e-9)
+                    maxh = z.low
+                    reversed_ = None
+                    for k in range(j, min(j + HORIZON, len(df))):
+                        maxh = max(maxh, float(high[k]))
+                        if float(close[k]) > z.high + 0.5 * a:
+                            reversed_ = False
+                            break
+                        if float(low[k]) <= entry - 1.0 * a:
+                            reversed_ = True
+                            break
+                    if reversed_ is not None:
+                        samples.append({
+                            "ticker": ticker, "score": round(z.score, 1),
+                            "held": reversed_,  # 复用字段名：压力侧 held=发生反转
+                            "depth": round(min((maxh - z.low) / width, 2.0), 2),
+                        })
+                    break
+    return samples
+
+
+def run(tickers: list[str], period: str = "5y", side: str = "sup") -> dict:
+    fn = run_ticker_res if side == "res" else run_ticker
     samples = []
     failed = []
     for t in tickers:
         try:
-            samples.extend(run_ticker(t, period))
+            samples.extend(fn(t, period))
         except Exception:
             failed.append(t)
-    return {"n_tickers": len(tickers) - len(failed), "failed": failed, **aggregate(samples)}
+    out = {"n_tickers": len(tickers) - len(failed), "failed": failed, "side": side, **aggregate(samples)}
+    if side == "res" and samples:
+        rev = [s for s in samples if s["held"]]
+        depths = sorted(s["depth"] for s in rev)
+        if depths:
+            out["depth_among_reversed"] = {
+                "median": depths[len(depths) // 2],
+                "p25": depths[len(depths) // 4],
+                "p75": depths[3 * len(depths) // 4],
+                "note": "反转发生前扎入压力区的深度(0=下沿,1=上沿)——止盈挂单位置的依据",
+            }
+    return out
