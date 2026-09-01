@@ -84,6 +84,9 @@ def analyze(ticker: str, with_news: bool = True, with_short: bool = True) -> dic
         max_oi = max((w["oi"] for w in walls["call_walls"] + walls["put_walls"]), default=1)
         for w in walls["put_walls"] + walls["call_walls"]:
             extra.append((float(w["strike"]), 0.8 + 1.2 * w["oi"] / max_oi, "期权持仓墙"))
+    # 分钟级密集区(2026-09-01裁定)：不参与区间计分——它带强新近性偏好，与被回测
+    # 否决的"成交量半衰期"同一性质且无法walk-forward验证；仅作展示参考(minute_profile字段)
+    minprof = data.get_minute_profile_candidates(ticker)
 
     zones, tol = build_zones(df, extra=extra)
     supports, resistances, inside = split_zones(zones, price)
@@ -147,6 +150,8 @@ def analyze(ticker: str, with_news: bool = True, with_short: bool = True) -> dic
     }
     if walls:
         out["option_walls"] = walls
+    if minprof:
+        out["minute_profile"] = [{"price": round(p, 2), "weight": round(w, 2)} for p, w, _ in minprof]
     out["plan"] = trade_plan(out)
     if with_short:
         short = data.get_short_stats(ticker)

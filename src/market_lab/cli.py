@@ -22,6 +22,10 @@ def main() -> None:
     p_bt = sub.add_parser("backtest", help="回测抄底分各分数段的历史胜率")
     p_bt.add_argument("--period", default="5y")
 
+    p_lbt = sub.add_parser("levelbt", help="位置质量回测：支撑区守住率按强度分桶(引擎改动的裁判)")
+    p_lbt.add_argument("--period", default="5y")
+    p_lbt.add_argument("--tag", default="run")
+
     sub.add_parser("alerts", help="盘中检查：谁进入了进场参考区(供定时任务调用)")
 
     p_ad = sub.add_parser("advise", help="单票模式化买卖建议(结合大盘状态和持仓)")
@@ -91,6 +95,16 @@ def main() -> None:
         from .report import load_watchlist
         json.dump(check(load_watchlist()), sys.stdout, ensure_ascii=False, indent=1)
         print()
+    elif args.cmd == "levelbt":
+        from pathlib import Path
+        from datetime import date
+        from .levelbt import run as lrun
+        from .report import load_watchlist
+        tickers = [x["symbol"] for x in load_watchlist()]
+        result = lrun(tickers, period=args.period)
+        out = Path(__file__).resolve().parents[2] / "reports" / f"levelbt-{date.today().isoformat()}-{args.tag}.json"
+        out.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(json.dumps(result, ensure_ascii=False, indent=1))
     elif args.cmd == "backtest":
         from pathlib import Path
         from datetime import date

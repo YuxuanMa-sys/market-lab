@@ -58,6 +58,63 @@ def get_quote(ticker: str) -> dict:
     }
 
 
+def get_minute_profile(ticker: str, days: int = 60, bins: int = 120, top_n: int = 6) -> list | None:
+    """分钟级 volume-at-price：比日线典型价近似准得多的成交密集区。
+
+    近60个交易日的1分钟K线，按半衰期30天加权聚合到价格轴，取局部峰值。
+    返回 [(price, weight, label), ...] 供 levels 引擎作为候选位（替代日线版粗算）。
+    """
+    import numpy as np
+
+    sym = _sym(ticker)
+    end = date.today()
+    start = (end - timedelta(days=int(days * 1.6))).isoformat()
+    prices, vols, ages = [], [], []
+    j = _get(
+        f"/v2/aggs/ticker/{sym}/range/1/minute/{start}/{end.isoformat()}",
+        adjusted="true", sort="asc", limit=50000,
+    )
+    now_ms = None
+    for _ in range(4):  # 最多4页(~20万根)防失控
+        for r in j.get("results", []):
+            p = r.get("vw") or r.get("c")
+            v = r.get("v") or 0
+            if p and v:
+                prices.append(float(p))
+                vols.append(float(v))
+                ages.append(r["t"])
+        nxt = j.get("next_url")
+        if not nxt:
+            break
+        rr = requests.get(nxt, params={"apiKey": os.environ["POLYGON_API_KEY"]}, timeout=25)
+        rr.raise_for_status()
+        j = rr.json()
+    if len(prices) < 2000:
+        return None
+    prices = np.array(prices)
+    vols = np.array(vols)
+    now_ms = max(ages)
+    age_days = (now_ms - np.array(ages)) / 86400000.0
+    w = vols * 0.5 ** (age_days / 30.0)  # 半衰期30天：越新的成交越有定价权
+    lo, hi = np.percentile(prices, 1), np.percentile(prices, 99)
+    if hi <= lo:
+        return None
+    hist, edges = np.histogram(prices, bins=bins, range=(lo, hi), weights=w)
+    centers = (edges[:-1] + edges[1:]) / 2
+    mean_v = hist.mean()
+    peaks = [
+        (float(centers[i]), float(hist[i]))
+        for i in range(1, bins - 1)
+        if hist[i] > hist[i - 1] and hist[i] >= hist[i + 1] and hist[i] > 1.3 * mean_v
+    ]
+    peaks.sort(key=lambda x: -x[1])
+    top = peaks[:top_n]
+    if not top:
+        return None
+    vmax = top[0][1]
+    return [(p, 0.9 + 1.3 * v / vmax, "成交密集区·分钟级") for p, v in top]
+
+
 def get_short_stats(ticker: str) -> dict | None:
     """空头数据（含在股票套餐里，不限调用）：官方双周 SI + 回补天数 + 每日做空量占比。
 

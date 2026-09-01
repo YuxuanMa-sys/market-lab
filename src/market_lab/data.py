@@ -259,6 +259,22 @@ def get_short_stats(ticker: str) -> dict | None:
     return s
 
 
+def get_minute_profile_candidates(ticker: str) -> list | None:
+    """分钟级成交密集区候选位（Polygon）。不可用时返回 None，引擎退回日线近似。"""
+    if not has_polygon() or not _is_stock(ticker):
+        return None
+    p = _cache_path(f"minprof_{ticker}", by_session=True)
+    if p.exists():
+        return pd.read_pickle(p)
+    try:
+        from .providers import polygon
+        mp = polygon.get_minute_profile(ticker)
+    except Exception:
+        return None
+    pd.to_pickle(mp, p)
+    return mp
+
+
 def get_option_walls(ticker: str, price: float) -> dict | None:
     """期权持仓墙（Polygon Options）。无权限/链太薄/失败时返回 None，自动降级。"""
     if not has_polygon() or not _is_stock(ticker):
