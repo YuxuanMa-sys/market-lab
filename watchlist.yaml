@@ -22,6 +22,7 @@ tickers:
   - symbol: SMR
     cost: 9.1699
     pct: 3.83
+    since: 2026-09-01
     note: ""
   - symbol: MRVL
     note: ""
@@ -30,6 +31,7 @@ tickers:
   - symbol: IREN
     cost: 39.53
     pct: 7.28
+    since: 2026-08-27
     note: ""
   - symbol: WMT
     note: ""
