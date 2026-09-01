@@ -38,26 +38,31 @@ tickers:
   - symbol: CBRS
     cost: 187.78
     pct: 3.68
+    since: 2026-08-24
     note: ""
   - symbol: AMAT
     cost: 479.94
     pct: 3.79
+    since: 2026-08-24
     note: ""
   - symbol: SNDK
     note: ""
   - symbol: GOOGL
     cost: 355.88
     pct: 2.85
+    since: 2026-08-11
     note: ""
   - symbol: BSX
     cost: 46.77
     pct: 5.77
+    since: 2026-08-28
     note: ""
   - symbol: MU
     note: ""
   - symbol: NBIS
     cost: 221.47
     pct: 12.88
+    since: 2026-08-28
     note: ""
   - symbol: GLW
     note: ""
@@ -66,14 +71,17 @@ tickers:
   - symbol: ASTS
     cost: 58.6
     pct: 4.77
+    since: 2026-08-28
     note: ""
   - symbol: KLAC
     cost: 171.2415
     pct: 3.55
+    since: 2026-09-01
     note: ""
   - symbol: CRWV
     cost: 89.52
     pct: 6.92
+    since: 2026-08-24
     note: ""
   - symbol: FORM
     note: ""
@@ -84,6 +92,7 @@ tickers:
   - symbol: FN
     cost: 408.63
     pct: 3.37
+    since: 2026-08-31
     note: ""
   - symbol: AMKR
     note: ""
@@ -92,14 +101,17 @@ tickers:
   - symbol: RKLB
     cost: 65.4
     pct: 5.29
+    since: 2026-08-28
     note: ""
   - symbol: COIN
     cost: 178
     pct: 3.67
+    since: 2026-09-01
     note: ""
   - symbol: LITE
     cost: 906
     pct: 3.67
+    since: 2026-08-28
     note: ""
   - symbol: SPCX
     note: ""
