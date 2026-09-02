@@ -5,8 +5,26 @@
 """
 from __future__ import annotations
 
+import pandas as pd
+
 from . import data
 from .levels import build_zones, split_zones
+from .sizing import CLUSTER_CAP_PCT, SUB_CLUSTER_CAP_PCT, _load_clusters
+from .stock import dip_score
+
+
+def _live_dip_estimate(df, last: float, sup, tol) -> float:
+    """盘中抄底分估计：把实时价拼成一根合成K线再算分(成交量项不可靠,仅作排序用)。"""
+    try:
+        row = pd.DataFrame(
+            {"Open": [last], "High": [max(last, float(df['High'].iloc[-1]))],
+             "Low": [min(last, float(df['Low'].iloc[-1]))], "Close": [last],
+             "Volume": [float(df['Volume'].tail(20).mean())]},
+            index=[df.index[-1] + pd.Timedelta(days=1)],
+        )
+        return dip_score(pd.concat([df, row]), sup, tol)["score"]
+    except Exception:
+        return 0.0
 
 
 def check(watchlist: list[dict]) -> list[dict]:
@@ -63,7 +81,44 @@ def check(watchlist: list[dict]) -> list[dict]:
                     "entry_zone": {"low": round(ez.low, 2), "high": round(ez.high, 2), "score": round(ez.score, 1)},
                     "kind": "盘中进入进场区" if newly_in else "大跌逼近进场区",
                     "note": item.get("note", ""),
+                    "_dip_est": _live_dip_estimate(df, last, sup, tol),
+                    "_zscore": float(ez.score),
                 })
         except Exception:
             continue
-    return out
+
+    # ---- 候选触发的优先级排序：簇余量 > 抄底分段位 > 进场区强度 ----
+    # (大跌日十几只同时到位时,资金有限该先接谁——排序逻辑与仓位引擎同源)
+    parent_map, sub_map = _load_clusters()
+    pos_pct: dict[str, float] = {}
+    for it in watchlist:
+        if it.get("cost") is not None and it.get("pct"):
+            pos_pct[it["symbol"]] = float(it["pct"])
+    csums: dict[str, float] = {}
+    ssums: dict[str, float] = {}
+    for tk, p in pos_pct.items():
+        csums[parent_map.get(tk, "其他")] = csums.get(parent_map.get(tk, "其他"), 0) + p
+        sc = sub_map.get(tk)
+        if sc:
+            ssums[sc] = ssums.get(sc, 0) + p
+
+    entries = [x for x in out if x["kind"] in ("盘中进入进场区", "大跌逼近进场区")]
+    others = [x for x in out if x not in entries]
+    for x in entries:
+        c = parent_map.get(x["ticker"], "其他")
+        room = CLUSTER_CAP_PCT - csums.get(c, 0)
+        sc = sub_map.get(x["ticker"])
+        if sc:
+            room = min(room, SUB_CLUSTER_CAP_PCT - ssums.get(sc, 0))
+        x["cluster"] = c
+        x["cluster_room_pct"] = round(room, 1)
+        x["dip_est"] = round(x.pop("_dip_est"), 0)
+        band = 2 if x["dip_est"] >= 70 else (1 if x["dip_est"] >= 55 else 0)
+        x["_rank"] = (room > 0, band, x.pop("_zscore"))
+    entries.sort(key=lambda x: x["_rank"], reverse=True)
+    for i, x in enumerate(entries, 1):
+        x.pop("_rank")
+        x["priority"] = i
+        if x["cluster_room_pct"] <= 0:
+            x["note"] = (f"⚠「{x['cluster']}」簇已满,仅观察不建议接 — " + x["note"]).strip(" —")
+    return others + entries
