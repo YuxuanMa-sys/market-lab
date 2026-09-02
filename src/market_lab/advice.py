@@ -76,7 +76,7 @@ def _build_orders(res: dict, a: dict, cost: float | None, mmode: str, style: str
         if act in ("清仓认错", "趋势破坏-离场"):
             orders.append(_o("卖", "限价", price * 0.995, "全部", "尽快离场，挂现价下方一点保证成交"))
         elif act == "止盈减仓":
-            if style in ("single", "oco"):
+            if style in ("single", "oco", "hybrid"):
                 sell_at = max(price, tp_full) if price >= tp_full * 0.99 else price
                 orders.append(_o("卖", "限价", sell_at, "全部", "已达止盈条件，单笔模式全仓兑现"))
             else:
@@ -110,7 +110,10 @@ def _build_orders(res: dict, a: dict, cost: float | None, mmode: str, style: str
             elif act == "时间止损":
                 orders.append(_o("卖", "限价", price, "全部", "时间止损：15个交易日未达标，离场换弹"))
             else:
-                if style == "oco" and inv:
+                if style == "hybrid" and inv:
+                    # 混合方案：止损常挂兜底(保护不能等一小时)，止盈侧不挂单、由盘中提醒到价手动兑现
+                    orders.append(_o("卖", "止损", inv, "全部", f"止损常挂(GTC)；止盈 {tp_full}(成本×1.10) 不挂单——盘中提醒到价后手动全仓兑现"))
+                elif style == "oco" and inv:
                     orders.append(_o("卖", "止损", inv, "全部(OCO)", "与止盈单互斥：一单成交另一单自动撤"))
                     orders.append(_o("卖", "限价", tp_full, "全部(OCO)", "止盈=成本×1.10(回测最优单一出场)"))
                 elif style == "single" and inv:
@@ -131,7 +134,7 @@ def _build_orders(res: dict, a: dict, cost: float | None, mmode: str, style: str
     else:
         if act == "进场分批" and res.get("tranches"):
             tr = res["tranches"]
-            if style == "single":
+            if style in ("single", "hybrid"):
                 orders.append(_o("买", "限价", tr["t2"], "全部计划仓位", "单笔挂进场区中部；砸穿直接成交在更好价位"))
             else:
                 orders.append(_o("买", "限价", tr["t1"], "1/3", "进场区上沿"))
@@ -147,7 +150,7 @@ def _build_orders(res: dict, a: dict, cost: float | None, mmode: str, style: str
                 res["action"] = "临近挂单"
                 res["reasons"].append(f"抄底分 {dip:.0f} 已过线且现价距进场区上沿不足3%——可提前挂低接单")
                 tr = _tranches(ez["low"], ez["high"])
-                if style == "single":
+                if style in ("single", "hybrid"):
                     orders.append(_o("买", "限价", tr["t3"], "全部计划仓位", "单笔埋伏在进场区下沿(等恐慌针刺)"))
                 else:
                     orders.append(_o("买", "限价", tr["t2"], "1/3", "进场区中部埋伏"))
