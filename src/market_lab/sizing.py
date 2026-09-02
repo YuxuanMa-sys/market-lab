@@ -125,12 +125,16 @@ def apply_sizing(ok_stocks: list[dict], wl_by_symbol: dict[str, dict]) -> dict:
         c = clusters.get(t, "其他")
 
         buys = [o for o in orders if o["side"] == "买" and o["type"] == "限价"]
-        if buys and t not in pos_pct:  # 新进场：算总仓位再分摊到各档
+        if buys:  # 新进场或计划内补仓：算目标仓位，补仓只给"目标-已持有"的剩余额度
+            held = pos_pct.get(t, 0.0)
             risk = risk_base * (1.0 if dip >= 70 else 0.75)
             entry_ref = sum(o["price"] for o in buys) / len(buys)
             stop_ref = inv if inv else entry_ref * 0.93
             dist = max((entry_ref - stop_ref) / entry_ref, 0.02)
-            total_pct = min(risk / dist, MAX_SINGLE_POS_PCT)
+            total_pct = min(risk / dist, MAX_SINGLE_POS_PCT) - held
+            if held and total_pct <= 0:
+                total_pct = 0
+                adv["reasons"].append(f"⚠ 补仓被拦：已持仓 {held}% 达到/超过计划仓位——这是摊平不是补仓，不给额度")
             # 簇约束（两层取更紧的）：超限则缩减并警告
             room = CLUSTER_CAP_PCT - cluster_sums.get(c, 0)
             sc = subclusters.get(t)

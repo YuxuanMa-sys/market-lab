@@ -253,6 +253,15 @@ def load_watchlist() -> list[dict]:
     return wl.get("tickers", [])
 
 
+def load_order_style() -> str:
+    """挂单风格：single(单笔全仓,当前Fidelity适配) / oco / tranche(1/3梯次)。"""
+    try:
+        wl = yaml.safe_load((ROOT / "watchlist.yaml").read_text(encoding="utf-8"))
+        return str(wl.get("order_style", "tranche"))
+    except Exception:
+        return "tranche"
+
+
 def generate(session: str = "premarket") -> tuple[Path, Path]:
     """生成报告，返回 (html路径, json路径)。json 给 Claude/程序读，html 给人看。"""
     now = datetime.now(ZoneInfo("America/Chicago"))
@@ -271,9 +280,10 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     ok_stocks = [s for s in stocks if "error" not in s]
 
     mmode, mmode_desc = market_mode(mkt)
+    style = load_order_style()
     wl_by_symbol = {i["symbol"]: i for i in load_watchlist()}
     for s in ok_stocks:
-        s["advice"] = advise(s, wl_by_symbol.get(s["ticker"], {}), mmode)
+        s["advice"] = advise(s, wl_by_symbol.get(s["ticker"], {}), mmode, style)
 
     # 持仓在前（按动作紧急度），候选在后（按抄底分从高到低）
     ok_stocks.sort(key=lambda s: (

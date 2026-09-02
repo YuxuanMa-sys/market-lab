@@ -56,16 +56,17 @@ def generate_signals(ticker: str, period: str = "5y") -> tuple[pd.DataFrame | No
         entry_zone = strong[0] if strong else None
         if entry_zone is None or not (entry_zone is inside or price <= entry_zone.high * 1.005):
             continue
-        tp1 = None
+        tp1 = tp1_high = None
         for z in sorted(zones, key=lambda zz: zz.mid):
             if z.low > entry_zone.high and z.score >= 3.5 and (z.low / price - 1) >= 0.03:
                 tp1 = float(z.low)
+                tp1_high = float(z.high)
                 break
         signals.append({
             "ticker": ticker, "i": i, "date": str(df.index[i].date()),
             "score": d["score"], "price": price, "atr": a,
             "zone_low": float(entry_zone.low), "zone_high": float(entry_zone.high),
-            "atr_pct": a / price, "tp1": tp1,
+            "atr_pct": a / price, "tp1": tp1, "tp1_high": tp1_high,
         })
     return df, signals
 
@@ -276,9 +277,15 @@ def _eval_exit(sig: dict, arrs: tuple, *, target: float | None = None,
 def _policy_params(name: str, sig: dict) -> dict:
     e = sig["price"]
     tp1 = sig.get("tp1") or e * 1.10
+    tp1_high = sig.get("tp1_high") or e * 1.10
+    tp1_mid = (tp1 + tp1_high) / 2 if sig.get("tp1") else e * 1.10
     return {
         "fixed10": {"target": e * 1.10},
         "tp1zone": {"target": tp1},
+        "tp1mid": {"target": tp1_mid},
+        "tp1top": {"target": tp1_high},
+        "tp1mid15": {"target": tp1_mid, "time_n": 15},
+        "tp1top15": {"target": tp1_high, "time_n": 15},
         "half_trail": {"half_at": tp1, "chand_k": 2.5},
         "chand20": {"chand_k": 2.0},
         "chand25": {"chand_k": 2.5},
@@ -289,7 +296,8 @@ def _policy_params(name: str, sig: dict) -> dict:
     }[name]
 
 
-EXIT_POLICIES = ["fixed10", "tp1zone", "half_trail", "chand20", "chand25", "chand30",
+EXIT_POLICIES = ["fixed10", "tp1zone", "tp1mid", "tp1top", "tp1mid15", "tp1top15",
+                 "half_trail", "chand20", "chand25", "chand30",
                  "time10", "time15", "time20"]
 
 

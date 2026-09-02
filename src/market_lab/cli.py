@@ -56,14 +56,14 @@ def main() -> None:
     elif args.cmd == "advise":
         from .advice import advise, market_mode
         from .market import overview
-        from .report import load_watchlist
+        from .report import load_order_style, load_watchlist
         from .stock import analyze
         t = args.ticker.upper()
         mkt = overview()
         a = analyze(t)
         item = next((i for i in load_watchlist() if i["symbol"] == t), {})
         mmode, desc = market_mode(mkt)
-        a["advice"] = advise(a, item, mmode)
+        a["advice"] = advise(a, item, mmode, load_order_style())
         json.dump({"market_mode": desc, "ticker": t, "advice": a["advice"],
                    "plan": a["plan"], "dip": a["dip"]}, sys.stdout, ensure_ascii=False, indent=1, default=str)
         print()

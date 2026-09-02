@@ -1,5 +1,12 @@
 # 自选股清单：每天盘前/盘后报告会逐个分析这里的票。
 #
+# order_style: 挂单风格（券商能力适配）
+#   single  = 单笔全仓（当前，适配Fidelity普通单）：每仓一张卖单，按"就近原则"挂
+#             止损或止盈側，另一侧由盘中提醒监控；止盈=成本×1.10(回测最优)
+#   oco     = 若券商支持OCO条件单(Fidelity网页版 Trade→Conditional)：止损+止盈同挂互斥
+#   tranche = 分批模式（1/3梯次，适合股数多的大账户）
+order_style: single
+#
 # 每只票可选字段：
 #   mode: swing | trend | event    策略模式，不填默认 swing
 #     swing = 抄底波段：触发进场(抄底分≥55)，TP止盈，破无效位认错
@@ -48,9 +55,6 @@ tickers:
   - symbol: SNDK
     note: ""
   - symbol: GOOGL
-    cost: 355.88
-    pct: 2.85
-    since: 2026-08-11
     note: ""
   - symbol: BSX
     cost: 46.77

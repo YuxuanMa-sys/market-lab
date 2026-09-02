@@ -20,6 +20,30 @@ def check(watchlist: list[dict]) -> list[dict]:
                 continue
             last = float(q["last"])
             ref_close = float(df["Close"].iloc[-1])
+
+            # 持仓票：盯防止损/止盈两侧(单笔挂单模式下,没挂的那一侧全靠这里提醒换单)
+            cost = item.get("cost")
+            if cost is not None:
+                from .indicators import atr as _atr
+                a_v = float(_atr(df).iloc[-1])
+                tp_full = float(cost) * 1.10
+                zones_p, _ = build_zones(df)
+                sup_p, _, ins_p = split_zones(zones_p, ref_close)
+                cand_p = ([ins_p] if ins_p else []) + sup_p
+                strong_p = [z for z in cand_p if z.score >= 4.0]
+                inv = (strong_p[0].low - 0.75 * a_v) if strong_p else None
+                chg = q.get("chg_pct")
+                if inv and last <= inv + 0.75 * a_v:
+                    out.append({"ticker": t, "last": round(last, 2),
+                                "chg_pct": round(chg, 2) if chg is not None else None,
+                                "entry_zone": {"low": round(inv, 2), "high": round(inv, 2), "score": 0},
+                                "kind": "持仓接近止损位", "note": f"止损参考位 {inv:.2f}——若该侧没挂单，现在换单"})
+                elif last >= tp_full - 0.75 * a_v:
+                    out.append({"ticker": t, "last": round(last, 2),
+                                "chg_pct": round(chg, 2) if chg is not None else None,
+                                "entry_zone": {"low": round(tp_full, 2), "high": round(tp_full, 2), "score": 0},
+                                "kind": "持仓接近止盈位", "note": f"止盈位 {tp_full:.2f}(成本×1.10)——若该侧没挂单，现在换单"})
+                continue  # 持仓票不再做进场区检查
             zones, tol = build_zones(df)
             sup, res, inside = split_zones(zones, ref_close)
             cand = ([inside] if inside else []) + sup

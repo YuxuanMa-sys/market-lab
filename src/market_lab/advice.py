@@ -21,7 +21,7 @@ ACTION_URGENCY = {
     "清仓认错": 0, "趋势破坏-离场": 0,
     "止盈减仓": 1, "财报降风险": 1,
     "轮动减仓": 2, "时间止损": 2, "警戒持有": 3,
-    "进场分批": 4, "临近挂单": 4, "持有": 5,
+    "进场分批": 4, "临近挂单": 4, "补仓触发": 4, "持有": 5,
     "等待": 6, "回避": 7,
 }
 URGENT_ACTIONS = {"清仓认错", "趋势破坏-离场", "止盈减仓", "财报降风险", "轮动减仓", "时间止损"}
@@ -57,31 +57,46 @@ def _o(side: str, otype: str, price: float, portion: str, note: str = "") -> dic
     return {"side": side, "type": otype, "price": round(price, 2), "portion": portion, "note": note}
 
 
-def _build_orders(res: dict, a: dict, cost: float | None, mmode: str) -> None:
-    """把建议翻译成可直接执行的挂单清单（价位+份额）。份额指该票计划仓位的比例。"""
+def _build_orders(res: dict, a: dict, cost: float | None, mmode: str, style: str = "tranche") -> None:
+    """把建议翻译成可直接执行的挂单清单（价位+份额）。
+
+    style 适配券商能力：tranche=1/3梯次；single=单笔全仓(每仓一张卖单,就近原则挂,
+    止盈=成本×1.10为回测最优单一出场目标)；oco=止损+止盈条件单同挂。"""
     act = res["action"]
     price = a["price"]
+    atr_v = a["atr"]
     plan = a.get("plan") or {}
     targets = plan.get("targets") or []
     inv = plan.get("invalid_below")
     orders: list[dict] = []
 
+    tp_full = round(cost * 1.10, 2) if cost is not None else None  # 单笔全仓止盈=成本×1.10(锦标赛冠军配置)
+
     if cost is not None:
         if act in ("清仓认错", "趋势破坏-离场"):
             orders.append(_o("卖", "限价", price * 0.995, "全部", "尽快离场，挂现价下方一点保证成交"))
         elif act == "止盈减仓":
-            orders.append(_o("卖", "限价", price, "1/3", "已在止盈区，即市附近卖出"))
-            # 锁盈位取"保本价"与"TP1下沿-0.75ATR"的更低者：cost 可能被 wash sale 抬高到
-            # 止盈区之上，直接挂保本价会挂在现价上方立刻触发
-            lock = cost
-            if targets:
-                lock = min(cost, targets[0]["low"] - 0.75 * a["atr"])
-            orders.append(_o("卖", "止损", lock, "剩余", "锁盈位（保本价与TP1下方0.75ATR取低者），让剩余仓位低风险奔跑"))
+            if style in ("single", "oco"):
+                sell_at = max(price, tp_full) if price >= tp_full * 0.99 else price
+                orders.append(_o("卖", "限价", sell_at, "全部", "已达止盈条件，单笔模式全仓兑现"))
+            else:
+                orders.append(_o("卖", "限价", price, "1/3", "已在止盈区，即市附近卖出"))
+                # 锁盈位取"保本价"与"TP1下沿-0.75ATR"的更低者：cost 可能被 wash sale 抬高到
+                # 止盈区之上，直接挂保本价会挂在现价上方立刻触发
+                lock = cost
+                if targets:
+                    lock = min(cost, targets[0]["low"] - 0.75 * a["atr"])
+                orders.append(_o("卖", "止损", lock, "剩余", "锁盈位（保本价与TP1下方0.75ATR取低者），让剩余仓位低风险奔跑"))
         elif act == "轮动减仓" and res.get("_rotation"):
             r = res["_rotation"]
             orders.append(_o("卖", "限价", r["sell"], "1/3", "压力区+过热，先落袋"))
             orders.append(_o("买", "限价", r["rebuy"], "1/3", "接回单：回落到支撑接回"))
             orders.append(_o("买", "止损买入", r["chase"], "1/3", "追回单：放量站上压力区就认错追回"))
+        elif act == "补仓触发" and res.get("tranches"):
+            tr = res["tranches"]
+            orders.append(_o("买", "限价", tr["t2"], "补仓", "进场区中部，份额=计划仓位剩余额度"))
+            if inv:
+                orders.append(_o("卖", "止损", inv, "全部(含补)", "无效位不变，补仓不放大认错成本"))
         elif act == "财报降风险":
             if res.get("pnl_pct", 0) > 0:
                 orders.append(_o("卖", "限价", price, "1/3", "财报前先兑现一部分浮盈"))
@@ -95,17 +110,33 @@ def _build_orders(res: dict, a: dict, cost: float | None, mmode: str) -> None:
             elif act == "时间止损":
                 orders.append(_o("卖", "限价", price, "全部", "时间止损：15个交易日未达标，离场换弹"))
             else:
-                if inv:
-                    orders.append(_o("卖", "止损", inv, "全部", "无效位止损单(GTC)，跌破自动离场"))
-                if targets:
-                    tp_price = targets[0].get("mid", targets[0]["low"])
-                    orders.append(_o("卖", "限价", tp_price, "1/3", "TP1 止盈单(GTC)，挂压力区中部(回测:卖下沿过于保守)"))
+                if style == "oco" and inv:
+                    orders.append(_o("卖", "止损", inv, "全部(OCO)", "与止盈单互斥：一单成交另一单自动撤"))
+                    orders.append(_o("卖", "限价", tp_full, "全部(OCO)", "止盈=成本×1.10(回测最优单一出场)"))
+                elif style == "single" and inv:
+                    # 单笔约束下的就近原则：挂离得近的那一侧，另一侧由盘中提醒盯防
+                    atr_ref = max(a["atr"], 1e-9)
+                    d_stop = (price - inv) / atr_ref
+                    d_tp = (tp_full - price) / atr_ref
+                    if d_stop <= d_tp:
+                        orders.append(_o("卖", "止损", inv, "全部", f"就近挂风险侧；止盈侧 {tp_full} 由盘中提醒盯防，接近时换单"))
+                    else:
+                        orders.append(_o("卖", "限价", tp_full, "全部", f"就近挂止盈侧(成本×1.10)；止损位 {inv} 由盘中提醒盯防，跌近时换单"))
+                else:
+                    if inv:
+                        orders.append(_o("卖", "止损", inv, "全部", "无效位止损单(GTC)，跌破自动离场"))
+                    if targets:
+                        tp_price = targets[0].get("mid", targets[0]["low"])
+                        orders.append(_o("卖", "限价", tp_price, "1/3", "TP1 止盈单(GTC)，挂压力区中部(回测:卖下沿过于保守)"))
     else:
         if act == "进场分批" and res.get("tranches"):
             tr = res["tranches"]
-            orders.append(_o("买", "限价", tr["t1"], "1/3", "进场区上沿"))
-            orders.append(_o("买", "限价", tr["t2"], "1/3", "进场区中部"))
-            orders.append(_o("买", "限价", tr["t3"], "1/3", "进场区下沿/恐慌针刺"))
+            if style == "single":
+                orders.append(_o("买", "限价", tr["t2"], "全部计划仓位", "单笔挂进场区中部；砸穿直接成交在更好价位"))
+            else:
+                orders.append(_o("买", "限价", tr["t1"], "1/3", "进场区上沿"))
+                orders.append(_o("买", "限价", tr["t2"], "1/3", "进场区中部"))
+                orders.append(_o("买", "限价", tr["t3"], "1/3", "进场区下沿/恐慌针刺"))
             if inv:
                 orders.append(_o("卖", "止损", inv, "成交部分", "成交后立刻设无效位止损"))
         elif act == "等待" and not res.get("_no_orders"):
@@ -116,15 +147,18 @@ def _build_orders(res: dict, a: dict, cost: float | None, mmode: str) -> None:
                 res["action"] = "临近挂单"
                 res["reasons"].append(f"抄底分 {dip:.0f} 已过线且现价距进场区上沿不足3%——可提前挂低接单")
                 tr = _tranches(ez["low"], ez["high"])
-                orders.append(_o("买", "限价", tr["t2"], "1/3", "进场区中部埋伏"))
-                orders.append(_o("买", "限价", tr["t3"], "1/3", "进场区下沿/恐慌针刺"))
+                if style == "single":
+                    orders.append(_o("买", "限价", tr["t3"], "全部计划仓位", "单笔埋伏在进场区下沿(等恐慌针刺)"))
+                else:
+                    orders.append(_o("买", "限价", tr["t2"], "1/3", "进场区中部埋伏"))
+                    orders.append(_o("买", "限价", tr["t3"], "1/3", "进场区下沿/恐慌针刺"))
                 if inv:
                     orders.append(_o("卖", "止损", inv, "成交部分", "成交后立刻设无效位止损"))
 
     res["orders"] = orders
 
 
-def advise(a: dict, item: dict, mmode: str) -> dict:
+def advise(a: dict, item: dict, mmode: str, style: str = "tranche") -> dict:
     mode = item.get("mode", "swing")
     cost = item.get("cost")
     price = a["price"]
@@ -215,6 +249,17 @@ def advise(a: dict, item: dict, mmode: str) -> dict:
                 ]
                 res["_rotation"] = {"sell": price, "rebuy": (sup["high"] if sup else price * 0.95), "chase": near["high"]}
 
+        # 计划内补仓：持仓票出现新触发(与开仓同标准) + 仓位引擎核到额度才会真给买单
+        # (额度=风险预算目标仓位-已持仓,再过簇/单票/总开放风险闸门——摊平在这里被制度性拦死)
+        if (res["action"] == "持有" and mode in ("swing", "event")
+                and plan.get("status") == "触发中"):
+            res["action"] = "补仓触发"
+            ez = plan.get("entry_zone")
+            res["reasons"].insert(0, plan.get("status_note", "新触发"))
+            res["reasons"].append(f"已持仓，补仓额度由仓位引擎核定（无额度会自动拦下）")
+            if ez:
+                res["tranches"] = _tranches(ez["low"], ez["high"])
+
         # 财报降风险叠加（所有模式）
         if de is not None and 0 <= de <= 3:
             if res["action"] in ("持有", "警戒持有"):
@@ -222,7 +267,7 @@ def advise(a: dict, item: dict, mmode: str) -> dict:
             res["reasons"].append(
                 f"⚠ {a['earnings_date']} 财报（{de}天内）：跳空双向、支撑挡不住跳空——杠杆清零，浮盈单考虑先兑现一部分"
             )
-        _build_orders(res, a, cost, mmode)
+        _build_orders(res, a, cost, mmode, style)
         res.pop("_rotation", None)
         return res
 
@@ -231,13 +276,13 @@ def advise(a: dict, item: dict, mmode: str) -> dict:
         res["action"] = "等待"
         res["_no_orders"] = True
         res["reasons"].append(f"空头市只做极端恐慌（抄底分70+），当前 {dip:.0f} 不够")
-        _build_orders(res, a, None, mmode)
+        _build_orders(res, a, None, mmode, style)
         return res
     if mmode == "bull" and 45 <= dip < 55:
         res["action"] = "回避"
         res["_no_orders"] = True
         res["reasons"].append("多头市里的个股独跌往往是有原因的跌：回测该情形胜率仅32%、负期望")
-        _build_orders(res, a, None, mmode)
+        _build_orders(res, a, None, mmode, style)
         return res
 
     if mode == "trend":
@@ -250,7 +295,7 @@ def advise(a: dict, item: dict, mmode: str) -> dict:
             res["action"] = "等待"
             res["_no_orders"] = True
             res["reasons"].append("趋势票只在'趋势完好+回调到50日线带或大级别支撑'时上车，不追高")
-        _build_orders(res, a, None, mmode)
+        _build_orders(res, a, None, mmode, style)
         return res
 
     status = plan.get("status", "")
@@ -267,5 +312,5 @@ def advise(a: dict, item: dict, mmode: str) -> dict:
     else:
         res["action"] = "等待"
         res["reasons"].append(plan.get("status_note") or plan.get("reason") or "未触发")
-    _build_orders(res, a, None, mmode)
+    _build_orders(res, a, None, mmode, style)
     return res
