@@ -91,6 +91,9 @@ tickers:
   - symbol: FORM
     note: ""
   - symbol: POWL
+    cost: 171.97
+    pct: 9.75
+    since: 2026-09-02
     note: ""
   - symbol: COHR
     note: ""
