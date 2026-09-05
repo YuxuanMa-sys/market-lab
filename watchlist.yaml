@@ -28,25 +28,14 @@ order_style: hybrid
 #     note: "AI核心仓"
 tickers:
   - symbol: SMR
-    cost: 9.1699
-    pct: 3.83
-    since: 2026-09-01
     note: ""
   - symbol: MRVL
     note: ""
-  - symbol: NNE
-    note: ""
   - symbol: IREN
-    cost: 39.53
-    pct: 7.28
-    since: 2026-08-27
     note: ""
   - symbol: WMT
     note: ""
   - symbol: CBRS
-    cost: 187.78
-    pct: 3.68
-    since: 2026-08-24
     note: ""
   - symbol: AMAT
     cost: 479.94
@@ -66,7 +55,7 @@ tickers:
     note: ""
   - symbol: NBIS
     cost: 221.47
-    pct: 12.88
+    pct: 9.32
     since: 2026-08-28
     note: ""
   - symbol: GLW
@@ -74,9 +63,6 @@ tickers:
   - symbol: CSCO
     note: ""
   - symbol: ASTS
-    cost: 58.6
-    pct: 4.77
-    since: 2026-08-28
     note: ""
   - symbol: KLAC
     cost: 171.2415
@@ -89,6 +75,9 @@ tickers:
     since: 2026-08-24
     note: ""
   - symbol: FORM
+    cost: 99
+    pct: 4.28
+    since: 2026-09-03
     note: ""
   - symbol: POWL
     cost: 171.97
@@ -108,7 +97,7 @@ tickers:
     note: ""
   - symbol: RKLB
     cost: 65.4
-    pct: 5.29
+    pct: 9
     since: 2026-08-28
     note: ""
   - symbol: COIN
@@ -129,6 +118,9 @@ tickers:
     note: ""
   # ---- 2026-08-28 低相关科技分散池（corr=与当日持仓组合的1年日收益相关性）----
   - symbol: ZS
+    cost: 167.31
+    pct: 3.96
+    since: 2026-09-04
     note: "零信任安全；corr 0.04；9/3财报是二元事件，自高点回撤30%有承接"
   - symbol: CRWD
     note: "端点安全龙头；corr 0.20；8/26财报大超后创新高——等回调别追"
@@ -139,6 +131,9 @@ tickers:
   - symbol: NU
     note: "拉美数字银行；corr 0.31；单季净利破$11亿；汇率+信贷周期风险"
   - symbol: SPOT
+    cost: 542
+    pct: 4.22
+    since: 2026-09-04
     note: "订阅提价+回购；corr -0.01(零相关)；8/18科技普跌日逆势+6%承接极强"
   - symbol: TTWO
     note: "GTA VI 2026-11-19发售硬催化；corr 0.18；发售前sell-the-news风险"
@@ -165,3 +160,12 @@ tickers:
     note: "AI医疗；EBITDA转正，今天刚+23%大涨——等回调，别追"
   - symbol: BABA
     note: "中概/AI云；Qwen生态+云智能+38%"
+  # ---- 2026-09-05 周度维护新增（云端routine筛选，push被403拦下后本地补上）----
+  - symbol: DDOG
+    note: "企业软件/可观测性；corr 0.09；8/6财报营收+36%大超，因AI大客户削减用量传闻月内-22%，9月初已现逢低买盘；风险：估值高，AI需求担忧若扩散再承压"
+  - symbol: RDDT
+    note: "消费互联网；corr 0.29；8/18纳入标普500带动+13%，冲高回落至150区间获接盘；风险：纳入效应兑现后动能待验证"
+  - symbol: TOST
+    note: "金融科技/餐饮SaaS；corr 0.04；Q2营收+23%超预期但EBITDA指引不及跌10-15%，机构逢低加仓；风险：硬件毛利承压"
+  - symbol: AFRM
+    note: "金融科技/BNPL；corr 0.32；Q2营收+33%大超+GAAP转盈，站稳68-72强支撑(68次触及)；风险：消费信贷周期+监管"
