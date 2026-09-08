@@ -54,9 +54,6 @@ tickers:
   - symbol: MU
     note: ""
   - symbol: NBIS
-    cost: 221.47
-    pct: 9.32
-    since: 2026-08-28
     note: ""
   - symbol: GLW
     note: ""
@@ -65,19 +62,10 @@ tickers:
   - symbol: ASTS
     note: ""
   - symbol: KLAC
-    cost: 171.2415
-    pct: 3.55
-    since: 2026-09-01
     note: ""
   - symbol: CRWV
-    cost: 89.52
-    pct: 6.92
-    since: 2026-08-24
     note: ""
   - symbol: FORM
-    cost: 99
-    pct: 4.28
-    since: 2026-09-03
     note: ""
   - symbol: POWL
     cost: 171.97
@@ -106,9 +94,6 @@ tickers:
     since: 2026-09-01
     note: ""
   - symbol: LITE
-    cost: 906
-    pct: 3.67
-    since: 2026-08-28
     note: ""
   - symbol: SPCX
     note: ""
@@ -141,6 +126,9 @@ tickers:
     note: "EDA龙头；corr 0.19(设计opex驱动,与设备capex错位)；8/26财报+16.8%——等回调"
   # ---- 2026-08-19 新增观察池（板块分散候选，非买入清单）----
   - symbol: VKTX
+    cost: 34
+    pct: 6.43
+    since: 2026-09-08
     note: "生物医药/GLP-1减肥药；Q3维持给药数据读出，Ph3数据是二元风险，仓位按最高风险档"
   - symbol: SMMT
     note: "生物医药/PD-1双抗；PDUFA 2026-11-14 硬催化，CRL风险真实存在"
@@ -149,6 +137,9 @@ tickers:
   - symbol: RBRK
     note: "网络安全/AI数据安全；8/27财报"
   - symbol: SOFI
+    cost: 17.99
+    pct: 4.13
+    since: 2026-09-08
     note: "金融科技；Q2超预期+上调指引，YTD深跌后被持续买回"
   - symbol: VST
     note: "电力/AI供电；与KKR/NVIDIA合资，距高点-24%，催化剂+深回调组合"
