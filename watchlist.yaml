@@ -45,6 +45,9 @@ tickers:
   - symbol: SNDK
     note: ""
   - symbol: GOOGL
+    cost: 328
+    pct: 3.82
+    since: 2026-09-09
     note: ""
   - symbol: BSX
     cost: 46.77
@@ -60,6 +63,9 @@ tickers:
   - symbol: CSCO
     note: ""
   - symbol: ASTS
+    cost: 63.49
+    pct: 4.81
+    since: 2026-09-09
     note: ""
   - symbol: KLAC
     note: ""
@@ -114,6 +120,9 @@ tickers:
   - symbol: GH
     note: "液体活检筛查放量+44%营收；corr 0.15；仍亏损高beta"
   - symbol: NU
+    cost: 15
+    pct: 4.63
+    since: 2026-09-09
     note: "拉美数字银行；corr 0.31；单季净利破$11亿；汇率+信贷周期风险"
   - symbol: SPOT
     cost: 542
@@ -142,6 +151,9 @@ tickers:
     since: 2026-09-08
     note: "金融科技；Q2超预期+上调指引，YTD深跌后被持续买回"
   - symbol: VST
+    cost: 149
+    pct: 4.66
+    since: 2026-09-09
     note: "电力/AI供电；与KKR/NVIDIA合资，距高点-24%，催化剂+深回调组合"
   - symbol: SYM
     note: "仓储机器人；GAAP已盈利，依赖沃尔玛大客户"
@@ -157,6 +169,12 @@ tickers:
   - symbol: RDDT
     note: "消费互联网；corr 0.29；8/18纳入标普500带动+13%，冲高回落至150区间获接盘；风险：纳入效应兑现后动能待验证"
   - symbol: TOST
+    cost: 32.5
+    pct: 5
+    since: 2026-09-09
     note: "金融科技/餐饮SaaS；corr 0.04；Q2营收+23%超预期但EBITDA指引不及跌10-15%，机构逢低加仓；风险：硬件毛利承压"
   - symbol: AFRM
+    cost: 69
+    pct: 5.26
+    since: 2026-09-09
     note: "金融科技/BNPL；corr 0.32；Q2营收+33%大超+GAAP转盈，站稳68-72强支撑(68次触及)；风险：消费信贷周期+监管"
