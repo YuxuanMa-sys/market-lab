@@ -50,13 +50,13 @@ tickers:
     since: 2026-09-09
     note: ""
   - symbol: BSX
-    cost: 46.77
-    pct: 5.77
-    since: 2026-08-28
     note: ""
   - symbol: MU
     note: ""
   - symbol: NBIS
+    cost: 230
+    pct: 4.46
+    since: 2026-09-10
     note: ""
   - symbol: GLW
     note: ""
@@ -70,6 +70,9 @@ tickers:
   - symbol: KLAC
     note: ""
   - symbol: CRWV
+    cost: 90
+    pct: 4.18
+    since: 2026-09-10
     note: ""
   - symbol: FORM
     note: ""
@@ -88,6 +91,14 @@ tickers:
   - symbol: AMKR
     note: ""
   - symbol: SOXX
+    cost: 521.9
+    pct: 4.05
+    since: 2026-09-10
+    note: ""
+  - symbol: LITE
+    cost: 940
+    pct: 3.66
+    since: 2026-09-10
     note: ""
   - symbol: RKLB
     cost: 65.4
@@ -98,8 +109,6 @@ tickers:
     cost: 178
     pct: 3.67
     since: 2026-09-01
-    note: ""
-  - symbol: LITE
     note: ""
   - symbol: SPCX
     note: ""
