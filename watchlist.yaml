@@ -38,9 +38,6 @@ tickers:
   - symbol: CBRS
     note: ""
   - symbol: AMAT
-    cost: 479.94
-    pct: 3.79
-    since: 2026-08-24
     note: ""
   - symbol: SNDK
     note: ""
@@ -59,6 +56,9 @@ tickers:
     since: 2026-09-10
     note: ""
   - symbol: GLW
+    cost: 145
+    pct: 5.63
+    since: 2026-09-14
     note: ""
   - symbol: CSCO
     note: ""
@@ -75,6 +75,9 @@ tickers:
     since: 2026-09-10
     note: ""
   - symbol: FORM
+    cost: 105.9
+    pct: 4.03
+    since: 2026-09-14
     note: ""
   - symbol: POWL
     cost: 171.97
@@ -84,9 +87,6 @@ tickers:
   - symbol: COHR
     note: ""
   - symbol: FN
-    cost: 408.63
-    pct: 3.37
-    since: 2026-08-31
     note: ""
   - symbol: AMKR
     note: ""
@@ -118,9 +118,6 @@ tickers:
     note: ""
   # ---- 2026-08-28 低相关科技分散池（corr=与当日持仓组合的1年日收益相关性）----
   - symbol: ZS
-    cost: 167.31
-    pct: 3.96
-    since: 2026-09-04
     note: "零信任安全；corr 0.04；9/3财报是二元事件，自高点回撤30%有承接"
   - symbol: CRWD
     note: "端点安全龙头；corr 0.20；8/26财报大超后创新高——等回调别追"
@@ -160,9 +157,6 @@ tickers:
     since: 2026-09-08
     note: "金融科技；Q2超预期+上调指引，YTD深跌后被持续买回"
   - symbol: VST
-    cost: 149
-    pct: 4.66
-    since: 2026-09-09
     note: "电力/AI供电；与KKR/NVIDIA合资，距高点-24%，催化剂+深回调组合"
   - symbol: SYM
     note: "仓储机器人；GAAP已盈利，依赖沃尔玛大客户"
