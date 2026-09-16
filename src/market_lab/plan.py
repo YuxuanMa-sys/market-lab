@@ -129,3 +129,44 @@ def trade_plan(a: dict) -> dict:
         "pref_min_pct": PREF_MIN_PCT,
         "risk_reward": rr,
     }
+
+def stop_asof(ticker: str, asof: str) -> float | None:
+    """按 asof 日期(通常=买入日 since)重算当日的无效位。用于持仓止损棘轮：
+    持仓的止损只能升不能降——否则价格跌穿一档支撑，'最近的强支撑'换成下一档，
+    止损跟着下移，变成越跌越扛(2026-09-15 在 LITE/CRWV/NBIS 上实测发生)。"""
+    import pandas as pd
+    from . import data
+    from .indicators import atr as _atr
+    from .levels import build_zones, split_zones
+    from .stock import dip_score
+    try:
+        df = data.get_daily(ticker, "2y")
+        w = df[df.index <= pd.Timestamp(asof)]
+        if len(w) < 60:
+            return None
+        price = float(w["Close"].iloc[-1]); a = float(_atr(w).iloc[-1])
+        zones, tol = build_zones(w)
+        sup, _, inside = split_zones(zones, price)
+        cand = ([inside] if inside else []) + sup
+        strong = [z for z in cand if z.score >= MIN_ENTRY_SCORE]
+        ez = strong[0] if strong else (cand[0] if cand else None)
+        if ez is None:
+            return None
+        k = 1.0 if dip_score(w, sup, tol)["score"] >= 70 else 0.75
+        return round(ez.low - k * a, 2)
+    except Exception:
+        return None
+
+
+def ratchet_invalid(plan: dict, ticker: str, since: str | None) -> dict:
+    """把 plan.invalid_below 抬到 max(买入日止损, 今日止损)。返回 {'ratcheted': bool, 'since_stop': x}。"""
+    if not since or not plan or plan.get("invalid_below") is None:
+        return {"ratcheted": False, "since_stop": None}
+    s0 = stop_asof(ticker, str(since))
+    if s0 is None:
+        return {"ratcheted": False, "since_stop": None}
+    if s0 > plan["invalid_below"]:
+        plan["invalid_below_today"] = plan["invalid_below"]
+        plan["invalid_below"] = s0
+        return {"ratcheted": True, "since_stop": s0}
+    return {"ratcheted": False, "since_stop": s0}

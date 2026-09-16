@@ -50,6 +50,11 @@ def check(watchlist: list[dict]) -> list[dict]:
                 cand_p = ([ins_p] if ins_p else []) + sup_p
                 strong_p = [z for z in cand_p if z.score >= 4.0]
                 inv = (strong_p[0].low - 0.75 * a_v) if strong_p else None
+                if inv is not None and item.get("since"):
+                    from .plan import stop_asof
+                    s0 = stop_asof(t, str(item["since"]))
+                    if s0 is not None and s0 > inv:
+                        inv = s0  # 棘轮：持仓止损只升不降
                 chg = q.get("chg_pct")
                 if inv and last <= inv + 0.75 * a_v:
                     out.append({"ticker": t, "last": round(last, 2),

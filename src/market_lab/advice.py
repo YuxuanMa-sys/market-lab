@@ -179,6 +179,15 @@ def advise(a: dict, item: dict, mmode: str, style: str = "tranche") -> dict:
         pnl = round((price / cost - 1) * 100, 1)
         res["pnl_pct"] = pnl
 
+        # 止损棘轮：持仓止损只升不降(用 since 回算买入日止损取 max)
+        if mode in ("swing", "event") and item.get("since"):
+            from .plan import ratchet_invalid
+            rk = ratchet_invalid(plan, a["ticker"], str(item["since"]))
+            if rk["ratcheted"]:
+                res["reasons"].append(
+                    f"止损棘轮：今日重算位 {plan['invalid_below_today']} 低于买入日止损 {rk['since_stop']}，按不下移原则沿用 {rk['since_stop']}"
+                )
+
         if mode == "trend":
             ts = a.get("trail_stop")
             streak = a.get("below_ma50_streak", 0)
