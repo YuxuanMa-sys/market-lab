@@ -54,9 +54,6 @@ tickers:
   - symbol: MU
     note: ""
   - symbol: NBIS
-    cost: 230
-    pct: 4.46
-    since: 2026-09-10
     note: ""
   - symbol: GLW
     cost: 145
@@ -66,16 +63,10 @@ tickers:
   - symbol: CSCO
     note: ""
   - symbol: ASTS
-    cost: 63.49
-    pct: 4.81
-    since: 2026-09-09
     note: ""
   - symbol: KLAC
     note: ""
   - symbol: CRWV
-    cost: 90
-    pct: 4.18
-    since: 2026-09-10
     note: ""
   - symbol: FORM
     cost: 105.9
@@ -109,9 +100,6 @@ tickers:
     since: 2026-08-28
     note: ""
   - symbol: COIN
-    cost: 178
-    pct: 3.67
-    since: 2026-09-01
     note: ""
   - symbol: SPCX
     note: ""
@@ -129,9 +117,6 @@ tickers:
   - symbol: GH
     note: "液体活检筛查放量+44%营收；corr 0.15；仍亏损高beta"
   - symbol: NU
-    cost: 15
-    pct: 4.63
-    since: 2026-09-09
     note: "拉美数字银行；corr 0.31；单季净利破$11亿；汇率+信贷周期风险"
   - symbol: SPOT
     cost: 542
@@ -155,9 +140,6 @@ tickers:
   - symbol: RBRK
     note: "网络安全/AI数据安全；8/27财报"
   - symbol: SOFI
-    cost: 17.99
-    pct: 4.13
-    since: 2026-09-08
     note: "金融科技；Q2超预期+上调指引，YTD深跌后被持续买回"
   - symbol: VST
     note: "电力/AI供电；与KKR/NVIDIA合资，距高点-24%，催化剂+深回调组合"
@@ -175,9 +157,6 @@ tickers:
   - symbol: RDDT
     note: "消费互联网；corr 0.29；8/18纳入标普500带动+13%，冲高回落至150区间获接盘；风险：纳入效应兑现后动能待验证"
   - symbol: TOST
-    cost: 32.5
-    pct: 5
-    since: 2026-09-09
     note: "金融科技/餐饮SaaS；corr 0.04；Q2营收+23%超预期但EBITDA指引不及跌10-15%，机构逢低加仓；风险：硬件毛利承压"
   - symbol: AFRM
     cost: 69
