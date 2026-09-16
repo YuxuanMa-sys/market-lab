@@ -32,6 +32,9 @@ tickers:
   - symbol: MRVL
     note: ""
   - symbol: IREN
+    cost: 41.1
+    pct: 4.95
+    since: 2026-09-15
     note: ""
   - symbol: WMT
     note: ""
@@ -141,11 +144,11 @@ tickers:
     note: "EDA龙头；corr 0.19(设计opex驱动,与设备capex错位)；8/26财报+16.8%——等回调"
   # ---- 2026-08-19 新增观察池（板块分散候选，非买入清单）----
   - symbol: VKTX
-    cost: 34
-    pct: 6.43
-    since: 2026-09-08
     note: "生物医药/GLP-1减肥药；Q3维持给药数据读出，Ph3数据是二元风险，仓位按最高风险档"
   - symbol: SMMT
+    cost: 17.8
+    pct: 4.15
+    since: 2026-09-15
     note: "生物医药/PD-1双抗；PDUFA 2026-11-14 硬催化，CRL风险真实存在"
   - symbol: KTOS
     note: "国防/无人僚机；订单积压$2B，从$134腰斩到$60后企稳"
