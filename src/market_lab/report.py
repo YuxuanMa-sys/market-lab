@@ -110,6 +110,21 @@ tr:last-child td { border-bottom: none; }
 <div class="muted">其余 {{ n_noop }} 只今日无操作。挂单价为区间代表值，可在区间内酌情微调；止损单建议用 GTC。</div>
 </div>
 
+{% if stop_sheet %}
+<h2>🛡 今日止损单（全仓 GTC）</h2>
+<div class="card scroll">
+<table>
+<tr><th>票</th><th>现价</th><th>成本</th><th>止损价</th><th>距现价</th><th>备注</th></tr>
+{% for r in stop_sheet %}
+<tr><td><b>{{ r.ticker }}</b></td><td>{{ r.price }}</td><td>{{ r.cost }}</td><td><b>{{ r.stop }}</b></td>
+<td{% if r.dist_pct < 4 %} class="down"{% endif %}>{{ r.dist_pct }}%</td>
+<td class="muted">{% if r.locked_gain %}锁盈(止损>成本){% endif %}{% if r.dist_pct < 4 %} 一个ATR内，今日可能触发{% endif %}</td></tr>
+{% endfor %}
+</table>
+<div class="muted">止损价=无效位(进场区下沿-0.75/1.0 ATR)。Stop Limit 请把 limit 设在止损价下方约1%防跳空不成交。</div>
+</div>
+{% endif %}
+
 <div class="card">
   <b>风险仪表盘</b>　总开放风险 <b>{{ risk.open_risk_pct }}%</b>/{{ risk.open_risk_cap|int }}%
   {% if risk.cash_pct is not none %}　现金 <b>{{ risk.cash_pct }}%</b>{% endif %}
@@ -301,6 +316,26 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     ]
     n_noop = len(ok_stocks) - len(order_sheet)
 
+    # 今日止损单：每只持仓一行(票/现价/成本/止损价/距离)，按距离升序——用户每天早上照表挂 GTC 止损
+    stop_sheet = []
+    for s in ok_stocks:
+        item = wl_by_symbol.get(s["ticker"], {})
+        if item.get("cost") is None:
+            continue
+        stop_o = next((o for o in s["advice"].get("orders", []) if o["type"] == "止损"), None)
+        if not stop_o:
+            continue
+        price, stop, cost = s["price"], stop_o["price"], float(item["cost"])
+        stop_sheet.append({
+            "ticker": s["ticker"], "price": price, "cost": cost, "stop": stop,
+            "dist_pct": round((price - stop) / price * 100, 1),
+            "locked_gain": stop > cost,
+            "shares": stop_o.get("shares"), "usd": stop_o.get("usd"),
+        })
+    stop_sheet.sort(key=lambda r: r["dist_pct"])
+    # 紧凑版：一条推送放得下全部持仓
+    stop_line = " ".join(f"{r['ticker']}{r['stop']:g}" for r in stop_sheet)
+
     wl_symbols = {item["symbol"] for item in load_watchlist()}
     earnings = [e for e in data.get_earnings_calendar(14) if e.get("symbol") in wl_symbols]
     edates = {e["symbol"]: e["date"] for e in earnings}
@@ -316,6 +351,7 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         mmode_desc=mmode_desc,
         urgent_actions=URGENT_ACTIONS,
         order_sheet=order_sheet,
+        stop_sheet=stop_sheet,
         n_noop=n_noop,
         risk=risk_dashboard,
         stocks=ok_stocks,
@@ -335,7 +371,7 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     html_path.write_text(html, encoding="utf-8")
     json_path.write_text(
         json.dumps(
-            {"market_mode": mmode_desc, "order_sheet": order_sheet, "risk_dashboard": risk_dashboard,
+            {"market_mode": mmode_desc, "order_sheet": order_sheet, "stop_sheet": stop_sheet, "stop_line": stop_line, "risk_dashboard": risk_dashboard,
              "market": mkt, "stocks": stocks, "earnings": earnings},
             ensure_ascii=False, indent=1, default=str,
         ),
