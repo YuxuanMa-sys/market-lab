@@ -63,9 +63,6 @@ tickers:
   - symbol: CRWV
     note: ""
   - symbol: FORM
-    cost: 105.9
-    pct: 4.03
-    since: 2026-09-14
     note: ""
   - symbol: POWL
     cost: 171.97
@@ -89,13 +86,13 @@ tickers:
     since: 2026-09-10
     note: ""
   - symbol: RKLB
-    cost: 65.4
-    pct: 9
-    since: 2026-08-28
     note: ""
   - symbol: COIN
     note: ""
   - symbol: SPCX
+    cost: 150
+    pct: 5.89
+    since: 2026-09-18
     note: ""
   - symbol: DELL
     note: ""
@@ -113,6 +110,9 @@ tickers:
   - symbol: NU
     note: "拉美数字银行；corr 0.31；单季净利破$11亿；汇率+信贷周期风险"
   - symbol: SPOT
+    cost: 513
+    pct: 5.89
+    since: 2026-09-18
     note: "订阅提价+回购；corr -0.01(零相关)；8/18科技普跌日逆势+6%承接极强"
   - symbol: TTWO
     note: "GTA VI 2026-11-19发售硬催化；corr 0.18；发售前sell-the-news风险"
@@ -135,6 +135,9 @@ tickers:
   - symbol: VST
     note: "电力/AI供电；与KKR/NVIDIA合资，距高点-24%，催化剂+深回调组合"
   - symbol: SYM
+    cost: 41.8
+    pct: 4.84
+    since: 2026-09-18
     note: "仓储机器人；GAAP已盈利，依赖沃尔玛大客户"
   - symbol: IONQ
     note: "量子计算；营收+287%但60倍PS，板块情绪化剧烈"
