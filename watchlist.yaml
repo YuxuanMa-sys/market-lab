@@ -42,9 +42,6 @@ tickers:
   - symbol: SNDK
     note: ""
   - symbol: GOOGL
-    cost: 328
-    pct: 3.82
-    since: 2026-09-09
     note: ""
   - symbol: MU
     note: ""
@@ -63,9 +60,6 @@ tickers:
   - symbol: FORM
     note: ""
   - symbol: POWL
-    cost: 171.97
-    pct: 9.75
-    since: 2026-09-02
     note: ""
   - symbol: COHR
     note: ""
@@ -104,6 +98,9 @@ tickers:
   - symbol: VEEV
     note: "生命科学垂直云；corr -0.04(负相关!)；8/26 beat+raise跳涨15%——等回调"
   - symbol: GH
+    cost: 173
+    pct: 6.66
+    since: 2026-09-21
     note: "液体活检筛查放量+44%营收；corr 0.15；仍亏损高beta"
   - symbol: NU
     note: "拉美数字银行；corr 0.31；单季净利破$11亿；汇率+信贷周期风险"
@@ -120,9 +117,6 @@ tickers:
   - symbol: VKTX
     note: "生物医药/GLP-1减肥药；Q3维持给药数据读出，Ph3数据是二元风险，仓位按最高风险档"
   - symbol: SMMT
-    cost: 17.8
-    pct: 4.15
-    since: 2026-09-15
     note: "生物医药/PD-1双抗；PDUFA 2026-11-14 硬催化，CRL风险真实存在"
   - symbol: KTOS
     note: "国防/无人僚机；订单积压$2B，从$134腰斩到$60后企稳"
