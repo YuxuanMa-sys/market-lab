@@ -42,6 +42,9 @@ tickers:
   - symbol: SNDK
     note: ""
   - symbol: GOOGL
+    cost: 341.91
+    pct: 5.2
+    since: 2026-09-23
     note: ""
   - symbol: MU
     note: ""
@@ -114,6 +117,9 @@ tickers:
   - symbol: VKTX
     note: "生物医药/GLP-1减肥药；Q3维持给药数据读出，Ph3数据是二元风险，仓位按最高风险档"
   - symbol: SMMT
+    cost: 16.25
+    pct: 6.33
+    since: 2026-09-23
     note: "生物医药/PD-1双抗；PDUFA 2026-11-14 硬催化，CRL风险真实存在"
   - symbol: KTOS
     note: "国防/无人僚机；订单积压$2B，从$134腰斩到$60后企稳"
@@ -133,6 +139,9 @@ tickers:
   - symbol: TEM
     note: "AI医疗；EBITDA转正，今天刚+23%大涨——等回调，别追"
   - symbol: BABA
+    cost: 111.455
+    pct: 4.27
+    since: 2026-09-23
     note: "中概/AI云；Qwen生态+云智能+38%"
   # ---- 2026-09-05 周度维护新增（云端routine筛选，push被403拦下后本地补上）----
   - symbol: DDOG
@@ -140,9 +149,6 @@ tickers:
   - symbol: TOST
     note: "金融科技/餐饮SaaS；corr 0.04；Q2营收+23%超预期但EBITDA指引不及跌10-15%，机构逢低加仓；风险：硬件毛利承压"
   - symbol: AFRM
-    cost: 69
-    pct: 5.26
-    since: 2026-09-09
     note: "金融科技/BNPL；corr 0.32；Q2营收+33%大超+GAAP转盈，站稳68-72强支撑(68次触及)；风险：消费信贷周期+监管"
   # ---- 2026-09-19 周度维护：剔BSX(论点破裂/网络攻击)、RDDT(催化剂已兑现)；新增SHOP、AXON ----
   - symbol: SHOP
