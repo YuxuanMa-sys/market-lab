@@ -71,9 +71,6 @@ tickers:
   - symbol: AMKR
     note: ""
   - symbol: SOXX
-    cost: 521.9
-    pct: 4.05
-    since: 2026-09-10
     note: ""
   - symbol: LITE
     cost: 940
@@ -83,6 +80,9 @@ tickers:
   - symbol: RKLB
     note: ""
   - symbol: COIN
+    cost: 193
+    pct: 5.27
+    since: 2026-09-25
     note: ""
   - symbol: SPCX
     cost: 150
@@ -125,6 +125,9 @@ tickers:
     since: 2026-09-23
     note: "生物医药/PD-1双抗；PDUFA 2026-11-14 硬催化，CRL风险真实存在"
   - symbol: KTOS
+    cost: 45.5
+    pct: 5.28
+    since: 2026-09-25
     note: "国防/无人僚机；订单积压$2B，从$134腰斩到$60后企稳"
   - symbol: RBRK
     note: "网络安全/AI数据安全；8/27财报"
