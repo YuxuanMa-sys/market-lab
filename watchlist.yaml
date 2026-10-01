@@ -61,6 +61,9 @@ tickers:
   - symbol: FORM
     note: ""
   - symbol: POWL
+    cost: 186
+    pct: 7.19
+    since: 2026-09-30
     note: ""
   - symbol: COHR
     cost: 280
@@ -120,9 +123,6 @@ tickers:
   - symbol: SMMT
     note: "生物医药/PD-1双抗；PDUFA 2026-11-14 硬催化，CRL风险真实存在"
   - symbol: KTOS
-    cost: 45.5
-    pct: 5.28
-    since: 2026-09-25
     note: "国防/无人僚机；订单积压$2B，从$134腰斩到$60后企稳"
   - symbol: RBRK
     note: "网络安全/AI数据安全；8/27财报"
