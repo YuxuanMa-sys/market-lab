@@ -5,11 +5,11 @@
 # 依据(2026-08-28实测)：存储↔光互连暴跌日相关性0.83(同一场崩盘,必须同一大簇)；
 # CSCO/DELL暴跌日与AI硬件相关性≈0,移出；算力云与其他子簇暴跌日仅~0.4,子簇分开计。
 AI硬件:
-  存储: [MU, SNDK]
+  存储: [MU, SNDK, WDC]
   光互连: [LITE, COHR, FN, GLW]
   设备封测: [KLAC, FORM, AMKR, INTC, LRCX, TSM]
   算力云: [NBIS, CRWV, IREN, HUT]
-  芯片平台: [MRVL, NVDA, AVGO, SMCI, ANET, VRT, SOXX, CBRS]  # CBRS=Cerebras 晶圆级AI芯片
+  芯片平台: [MRVL, NVDA, AVGO, SMCI, ANET, VRT, SOXX, CBRS, ARM, QCOM]  # CBRS=Cerebras 晶圆级AI芯片
 企业IT硬件: [CSCO, DELL]
 企业软件SaaS: [ZS, OKTA, VEEV, SNPS, RBRK, DDOG, SHOP, CRM]
 核电电力: [SMR, POWL, LEU, VST, GEV, OKLO, CEG]
