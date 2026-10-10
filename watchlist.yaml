@@ -36,7 +36,8 @@ tickers:
     note: ""
   - symbol: IREN
     cost: 40
-    pct: 2.77
+    pct: 5.53
+    shares: 40
     since: 2026-10-01
     note: ""
   - symbol: WMT
@@ -45,19 +46,22 @@ tickers:
     note: ""
   - symbol: SNDK
     cost: 1685
-    pct: 3.1
+    pct: 6.21
+    shares: 1
     since: 2026-10-05
     note: ""
   - symbol: GOOGL
     note: ""
   - symbol: MU
     cost: 1042
-    pct: 2.02
+    pct: 4.04
+    shares: 1
     since: 2026-10-08
     note: ""
   - symbol: NBIS
     cost: 234
-    pct: 3.04
+    pct: 6.08
+    shares: 7
     since: 2026-10-06
     note: ""
   - symbol: GLW
@@ -68,7 +72,8 @@ tickers:
     note: ""
   - symbol: CRWV
     cost: 86.3
-    pct: 3.23
+    pct: 6.45
+    shares: 20
     since: 2026-10-08
     note: ""
   - symbol: FORM
@@ -81,7 +86,8 @@ tickers:
     note: ""
   - symbol: AMKR
     cost: 54.6
-    pct: 1.93
+    pct: 3.86
+    shares: 20
     since: 2026-10-06
     note: ""
   - symbol: SOXX
@@ -160,21 +166,25 @@ tickers:
   # ---- 2026-10-10 新建持仓录入（pct = 用户报表值 ÷ 2）----
   - symbol: WDC
     cost: 388
-    pct: 3.12
+    pct: 6.24
+    shares: 4
     since: 2026-10-09
     note: "持仓；存储(暴跌日corr 0.77 vs MU/SNDK——同一场崩盘)"
   - symbol: HOOD
     cost: 112.3
-    pct: 2.14
+    pct: 4.28
+    shares: 10
     since: 2026-10-01
     note: "持仓；金融科技(暴跌日corr 0.62)——AI硬件以外唯一分散仓"
   - symbol: QCOM
     cost: 176.2
-    pct: 3.44
+    pct: 6.89
+    shares: 10
     since: 2026-10-09
     note: "持仓；AI硬件中相关性最松的一员(暴跌日corr 0.43~0.49)"
   - symbol: ARM
     cost: 270.1
-    pct: 2.62
+    pct: 5.23
+    shares: 5
     since: 2026-10-09
     note: "持仓；芯片平台(暴跌日corr 0.73)"

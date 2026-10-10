@@ -114,22 +114,23 @@ tr:last-child td { border-bottom: none; }
 <h2>🛡 今日止损单（全仓 GTC）</h2>
 <div class="card scroll">
 <table>
-<tr><th>票</th><th>现价</th><th>成本</th><th>止损价</th><th>距现价</th><th>财报</th><th>备注</th></tr>
+<tr><th>票</th><th>股数</th><th>现价</th><th>成本</th><th>止损价</th><th>距现价</th><th>财报</th><th>备注</th></tr>
 {% for r in stop_sheet %}
-<tr><td><b>{{ r.ticker }}</b></td><td>{{ r.price }}</td><td>{{ r.cost }}</td>
+<tr><td><b>{{ r.ticker }}</b></td><td>{{ r.shares if r.shares else "?" }}</td><td>{{ r.price }}</td><td>{{ r.cost }}</td>
 <td><b>{% if r.stop is not none %}{{ r.stop }}{% else %}<span class="down">无</span>{% endif %}</b></td>
 <td{% if r.dist_pct is not none and r.dist_pct < 4 %} class="down"{% endif %}>{% if r.dist_pct is not none %}{{ r.dist_pct }}%{% if r.dist_atr %} ({{ r.dist_atr }}ATR){% endif %}{% else %}-{% endif %}</td>
 <td{% if r.days_to_earnings is not none and r.days_to_earnings <= 21 %} class="down"{% endif %}>{% if r.earnings %}{{ r.earnings }}{% if r.days_to_earnings is not none %} ({{ r.days_to_earnings }}天){% endif %}{% else %}<span class="muted">未知</span>{% endif %}</td>
 <td class="muted">{% if r.warn %}<span class="down">{{ r.warn }}</span>{% else %}{% if r.locked_gain %}锁盈(止损>成本){% endif %}{% if r.dist_pct is not none and r.dist_pct < 4 %} 一个ATR内，今日可能触发{% endif %}{% endif %}</td></tr>
 {% endfor %}
 </table>
-<div class="muted">止损价=无效位(进场区下沿-0.75/1.0 ATR)。Stop Limit 请把 limit 设在止损价下方约1%防跳空不成交。</div>
+<div class="muted">止损价=持仓期内结构止损的历史最高值（只升不降；单日值=支撑区下沿-0.75/1.0 ATR）。Stop Limit 请把 limit 设在止损价下方约1%防跳空不成交——注意财报是盘后发布，跳空发生在次日开盘，止损触发后按市价成交，成交价就是跳空后的价格而不是你挂的止损价。</div>
 </div>
 {% endif %}
 
 <div class="card">
   <b>风险仪表盘</b>　总开放风险 <b>{{ risk.open_risk_pct }}%</b>/{{ risk.open_risk_cap|int }}%
   {% if risk.cash_pct is not none %}　现金 <b>{{ risk.cash_pct }}%</b>{% endif %}
+  {% if risk.deployed_pct %}　已投入 <b>{{ risk.deployed_pct }}%</b>（杠杆 {{ risk.leverage }}:1{% if risk.buying_power %}，购买力 ${{ "{:,}".format(risk.buying_power|int) }}{% endif %}）{% endif %}
   　单笔风险 {{ risk.risk_per_trade }}%{% if risk.throttled %}（⛔熔断减半中）{% endif %}
   <div class="muted" style="margin-top:4px">簇占比：{% for c, v in risk.cluster_sums.items() %}{{ c }} {{ v }}%{% if not loop.last %} · {% endif %}{% endfor %}（簇上限 {{ risk.cluster_cap|int }}%）
   {% if risk.sub_cluster_sums %}<br>子簇：{% for c, v in risk.sub_cluster_sums.items() %}{{ c }} {{ v }}%{% if not loop.last %} · {% endif %}{% endfor %}（子簇上限 {{ risk.sub_cluster_cap|int }}%）{% endif %}
@@ -361,7 +362,10 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
             "action": adv.get("action"),
             "earnings": s.get("earnings_date"), "days_to_earnings": de,
             "stop": None, "dist_pct": None, "dist_atr": None,
-            "locked_gain": False, "shares": None, "usd": None, "warn": "",
+            "locked_gain": False, "usd": None, "warn": "",
+            # 股数用 watchlist 里记的真实持仓数：富达挂单要填数量，
+            # 用仓位%反推会得到小数股(挂不上去)。清仓认错的行同样需要它。
+            "shares": item.get("shares"),
         }
         if stop_o:
             stop = stop_o["price"]
@@ -370,7 +374,8 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
                 "dist_pct": round((price - stop) / price * 100, 1),
                 "dist_atr": round((price - stop) / atr_v, 2) if atr_v else None,
                 "locked_gain": stop > cost,
-                "shares": stop_o.get("shares"), "usd": stop_o.get("usd"),
+                "shares": item.get("shares") or stop_o.get("shares"),
+                "usd": stop_o.get("usd"),
             })
             # 噪音宽度告警：止损离现价不到 0.5 ATR，开盘的正常波动就能打掉它。
             # 不改价格(那是风险参数，需要回测背书)，只把事实喊出来让人决定。

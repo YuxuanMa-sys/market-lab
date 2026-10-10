@@ -169,8 +169,29 @@ def apply_sizing(ok_stocks: list[dict], wl_by_symbol: dict[str, dict]) -> dict:
                     if total:
                         o["usd"] = int(total * o["pct"] / 100)
 
+    # 杠杆率：pct 是"占权益的百分比"，所以持仓合计 >100% 就说明动用了 margin。
+    # margin 会放大回撤熔断的灵敏度：2:1 下组合跌 4% 就等于权益跌 8%，直接触发熔断。
+    deployed = round(sum(pos_pct.values()), 2)
+    bp = (acc or {}).get("buying_power")
+    if deployed > 100:
+        warnings.append(
+            f"⚠ 已动用 margin：持仓合计 {deployed}% 超过自有权益。回撤熔断灵敏度同步放大——"
+            f"杠杆 {deployed / 100:.2f}:1 下组合跌 {8 * 100 / deployed:.1f}% 就等于权益跌 8%，即触发熔断减半"
+        )
+    if deployed > 0 and cluster_sums:
+        top_c, top_v = max(cluster_sums.items(), key=lambda kv: kv[1])
+        share = round(top_v / deployed * 100, 1)
+        if share >= 70:
+            warnings.append(
+                f"⚠ 「{top_c}」占【已投入资金】{share}%（占权益 {top_v}%，簇上限按权益算是 {CLUSTER_CAP_PCT:.0f}%）"
+                f"——簇上限以权益为分母，半仓时拦不住集中度；这个比例才是你真实的单一赛道暴露"
+            )
+
     dashboard = {
         "open_risk_pct": open_risk,
+        "deployed_pct": deployed,
+        "leverage": round(deployed / 100, 2),
+        "buying_power": bp,
         "open_risk_cap": TOTAL_OPEN_RISK_CAP_PCT,
         "cash_pct": round(max(0.0, 100 - sum(pos_pct.values())), 1) if pos_pct else None,
         "positions_pct": dict(sorted(pos_pct.items(), key=lambda kv: -kv[1])),
