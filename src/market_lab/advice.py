@@ -310,6 +310,16 @@ def advise(a: dict, item: dict, mmode: str, style: str = "tranche") -> dict:
             if ez:
                 res["tranches"] = _tranches(ez["low"], ez["high"])
 
+        # 持仓窗口内的财报：只提示、不改动作。抄底波段的持有窗口是 15 个交易日(≈21天)，
+        # 所以"3天内才预警"对决策没用——但把动作阈值从 3 天放宽是改变交易行为，
+        # 需要回测背书，这里先只把事实说出来。
+        if de is not None and 3 < de <= 21:
+            res["reasons"].append(
+                f"📅 {a['earnings_date']} 财报（{de}天后，落在你 15 个交易日的持有窗口内）："
+                f"这笔会变成押注财报而不是波段——到成本×1.10 还需 {((cost * 1.10 / price - 1) * 100):+.1f}%，"
+                f"自己决定是财报前降风险还是接受带仓过财报"
+            )
+
         # 财报降风险叠加（所有模式）
         if de is not None and 0 <= de <= 3:
             if res["action"] in ("持有", "警戒持有"):

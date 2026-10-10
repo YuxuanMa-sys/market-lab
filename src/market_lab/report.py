@@ -114,11 +114,12 @@ tr:last-child td { border-bottom: none; }
 <h2>🛡 今日止损单（全仓 GTC）</h2>
 <div class="card scroll">
 <table>
-<tr><th>票</th><th>现价</th><th>成本</th><th>止损价</th><th>距现价</th><th>备注</th></tr>
+<tr><th>票</th><th>现价</th><th>成本</th><th>止损价</th><th>距现价</th><th>财报</th><th>备注</th></tr>
 {% for r in stop_sheet %}
 <tr><td><b>{{ r.ticker }}</b></td><td>{{ r.price }}</td><td>{{ r.cost }}</td>
 <td><b>{% if r.stop is not none %}{{ r.stop }}{% else %}<span class="down">无</span>{% endif %}</b></td>
 <td{% if r.dist_pct is not none and r.dist_pct < 4 %} class="down"{% endif %}>{% if r.dist_pct is not none %}{{ r.dist_pct }}%{% if r.dist_atr %} ({{ r.dist_atr }}ATR){% endif %}{% else %}-{% endif %}</td>
+<td{% if r.days_to_earnings is not none and r.days_to_earnings <= 21 %} class="down"{% endif %}>{% if r.earnings %}{{ r.earnings }}{% if r.days_to_earnings is not none %} ({{ r.days_to_earnings }}天){% endif %}{% else %}<span class="muted">未知</span>{% endif %}</td>
 <td class="muted">{% if r.warn %}<span class="down">{{ r.warn }}</span>{% else %}{% if r.locked_gain %}锁盈(止损>成本){% endif %}{% if r.dist_pct is not none and r.dist_pct < 4 %} 一个ATR内，今日可能触发{% endif %}{% endif %}</td></tr>
 {% endfor %}
 </table>
@@ -299,9 +300,30 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
 
     ok_stocks = [s for s in stocks if "error" not in s]
 
+    # 财报日必须在 advise() 之前就位：原先这段在 80 行之后才跑，导致 advise() 里
+    # a.get("earnings_date") 恒为 None、「财报降风险」那条分支从未触发过(死代码)，
+    # HTML 上的 📅 横幅只是事后贴上去的装饰，没有任何挂单或动作反映它。
+    # 窗口从 14 天拉到 45 天：持仓窗口是 15 个交易日(≈21天)，14 天的前瞻看不到
+    # 自己持有期内就会撞上的财报。watchlist 里可用 earnings: YYYY-MM-DD 钉住
+    # 公司已确认、而 Finnhub 日历没覆盖到的日期（覆盖很稀：10 个持仓里只认得 2 个）。
+    wl_by_symbol = {i["symbol"]: i for i in load_watchlist()}
+    wl_symbols = set(wl_by_symbol)
+    earnings = [e for e in data.get_earnings_calendar(45) if e.get("symbol") in wl_symbols]
+    edates = {e["symbol"]: e["date"] for e in earnings}
+    for item in wl_by_symbol.values():
+        if item.get("earnings"):
+            edates[item["symbol"]] = str(item["earnings"])   # 人工确认日优先于日历
+    for s in ok_stocks:
+        s["earnings_date"] = edates.get(s["ticker"])
+    have = {e["symbol"] for e in earnings}
+    for item in wl_by_symbol.values():
+        if item.get("earnings") and item["symbol"] not in have:
+            earnings.append({"symbol": item["symbol"], "date": str(item["earnings"]),
+                             "hour": "", "eps_estimate": None, "manual": True})
+    earnings.sort(key=lambda e: e["date"])
+
     mmode, mmode_desc = market_mode(mkt)
     style = load_order_style()
-    wl_by_symbol = {i["symbol"]: i for i in load_watchlist()}
     for s in ok_stocks:
         s["advice"] = advise(s, wl_by_symbol.get(s["ticker"], {}), mmode, style)
 
@@ -332,9 +354,12 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         adv = s["advice"]
         stop_o = next((o for o in adv.get("orders", []) if o["type"] == "止损"), None)
         price, cost, atr_v = s["price"], float(item["cost"]), s.get("atr") or 0
+        from .advice import _days_to
+        de = _days_to(s.get("earnings_date"))
         row = {
             "ticker": s["ticker"], "price": price, "cost": cost,
             "action": adv.get("action"),
+            "earnings": s.get("earnings_date"), "days_to_earnings": de,
             "stop": None, "dist_pct": None, "dist_atr": None,
             "locked_gain": False, "shares": None, "usd": None, "warn": "",
         }
@@ -379,11 +404,6 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         for r in stop_sheet
     )
 
-    wl_symbols = {item["symbol"] for item in load_watchlist()}
-    earnings = [e for e in data.get_earnings_calendar(14) if e.get("symbol") in wl_symbols]
-    edates = {e["symbol"]: e["date"] for e in earnings}
-    for s in ok_stocks:
-        s["earnings_date"] = edates.get(s["ticker"])
 
     title = f"{'盘前' if session == 'premarket' else '盘后'}分析 · {now.strftime('%Y-%m-%d')}"
     html = TEMPLATE.render(
