@@ -130,7 +130,7 @@ tr:last-child td { border-bottom: none; }
 <div class="card">
   <b>风险仪表盘</b>　总开放风险 <b>{{ risk.open_risk_pct }}%</b>/{{ risk.open_risk_cap|int }}%
   {% if risk.cash_pct is not none %}　现金 <b>{{ risk.cash_pct }}%</b>{% endif %}
-  {% if risk.deployed_pct %}　已投入 <b>{{ risk.deployed_pct }}%</b>（杠杆 {{ risk.leverage }}:1{% if risk.buying_power %}，购买力 ${{ "{:,}".format(risk.buying_power|int) }}{% endif %}）{% endif %}
+  {% if risk.deployed_pct %}　已投入 <b>{{ risk.deployed_pct }}%</b>{% if risk.leverage > 1 %}（⚠ 杠杆 {{ risk.leverage }}:1）{% endif %}{% endif %}
   　单笔风险 {{ risk.risk_per_trade }}%{% if risk.throttled %}（⛔熔断减半中）{% endif %}
   <div class="muted" style="margin-top:4px">簇占比：{% for c, v in risk.cluster_sums.items() %}{{ c }} {{ v }}%{% if not loop.last %} · {% endif %}{% endfor %}（簇上限 {{ risk.cluster_cap|int }}%）
   {% if risk.sub_cluster_sums %}<br>子簇：{% for c, v in risk.sub_cluster_sums.items() %}{{ c }} {{ v }}%{% if not loop.last %} · {% endif %}{% endfor %}（子簇上限 {{ risk.sub_cluster_cap|int }}%）{% endif %}
