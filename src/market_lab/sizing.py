@@ -5,7 +5,7 @@
 本地存在 account.yaml (gitignored) 时额外换算股数和金额。
 
 规则：
-- 单笔风险 = 账户的 RISK_PER_TRADE%（55-69分触发×0.75，70+分×1.0，quarter-Kelly封顶思想）
+- 单笔风险 = 账户的 RISK_PER_TRADE%（55-69分触发×0.75，70+分×1.0；档位见下方常量）
 - 仓位% = 单笔风险% ÷ 到止损的距离%，上限 MAX_SINGLE_POS%
 - 同相关性簇合计 ≤ CLUSTER_CAP%（clusters.yaml 定义），总开放风险 ≤ TOTAL_OPEN_RISK_CAP%
 - 回撤熔断：账户 < 高水位×0.92 时单笔风险减半
@@ -18,12 +18,14 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 
-RISK_PER_TRADE_PCT = 1.0
-MAX_SINGLE_POS_PCT = 10.0
-CLUSTER_CAP_PCT = 40.0
-SUB_CLUSTER_CAP_PCT = 20.0
-TOTAL_OPEN_RISK_CAP_PCT = 8.0
-DD_THROTTLE_RATIO = 0.92
+# ===== 激进档 (2026-10-10 用户选定) =====
+# 保守档原值供回退: 1.0 / 10.0 / 40.0 / 20.0 / 8.0
+RISK_PER_TRADE_PCT = 1.5        # quarter-Kelly → half-Kelly：复利更快，连亏8笔回撤约-12%
+MAX_SINGLE_POS_PCT = 15.0
+CLUSTER_CAP_PCT = 55.0
+SUB_CLUSTER_CAP_PCT = 27.5      # 维持 子簇=大簇一半 的比例
+TOTAL_OPEN_RISK_CAP_PCT = 12.0
+DD_THROTTLE_RATIO = 0.92        # 熔断线不放宽：激进档下更易触发，而这正是它的作用
 
 
 def load_account() -> dict | None:
