@@ -66,7 +66,9 @@ def _build_orders(res: dict, a: dict, cost: float | None, mmode: str, style: str
     price = a["price"]
     atr_v = a["atr"]
     plan = a.get("plan") or {}
-    targets = plan.get("targets") or []
+    # 持仓侧用 advise() 过滤过的阶梯(只保留成本之上的档位)；候选侧用原始 targets
+    eff = res.get("_eff_targets")
+    targets = eff if eff is not None else (plan.get("targets") or [])
     inv = plan.get("invalid_below")
     orders: list[dict] = []
 
@@ -178,6 +180,7 @@ def advise(a: dict, item: dict, mmode: str, style: str = "tranche") -> dict:
     if cost:
         pnl = round((price / cost - 1) * 100, 1)
         res["pnl_pct"] = pnl
+        res["cost_tp"] = round(cost * 1.10, 2)   # 报告卡片/推送统一引用的出场线
 
         # 止损棘轮：持仓止损只升不降(用 since 回算买入日止损取 max)
         if mode in ("swing", "event") and item.get("since"):
@@ -185,7 +188,7 @@ def advise(a: dict, item: dict, mmode: str, style: str = "tranche") -> dict:
             rk = ratchet_invalid(plan, a["ticker"], str(item["since"]))
             if rk["ratcheted"]:
                 res["reasons"].append(
-                    f"止损棘轮：今日重算位 {plan['invalid_below_today']} 低于买入日止损 {rk['since_stop']}，按不下移原则沿用 {rk['since_stop']}"
+                    f"止损棘轮：今日重算位 {plan['invalid_below_today']} 低于持仓期最高止损 {rk['since_stop']}，按只升不降原则沿用 {rk['since_stop']}"
                 )
 
         if mode == "trend":
@@ -210,6 +213,29 @@ def advise(a: dict, item: dict, mmode: str, style: str = "tranche") -> dict:
         else:  # swing / event 持仓
             invalid = plan.get("invalid_below")
             targets = plan.get("targets") or []
+            tp_full = round(cost * 1.10, 2)
+            # single/hybrid/oco 三种风格下，实际执行的止盈就是成本×1.10(出场锦标赛冠军配置)，
+            # 压力区阶梯只是参考；tranche 风格才真的按阶梯分批减。
+            cost_anchored = style in ("single", "hybrid", "oco")
+
+            # ---- 止盈阶梯：剔除落在成本(或成本×1.10)以下的档位 ----
+            # targets 是按【进场区】算的。买入价高于进场区时整条阶梯会落在成本以下，
+            # 于是 price>=TP1 开盘即成立——在平/亏仓位上报"止盈"。更糟的是动作一旦变成
+            # "止盈减仓"，_build_orders 只出一张全仓卖单、不再挂止损，等于既锁死亏损又卸掉保护。
+            # 实测(2026-10-10)：MU 两档TP(993.1/1025.2)全在成本1042以下 → -1.2% 被判"已达最后一档止盈"；
+            #                  WDC TP1(370.03-383.99)在成本388以下 → +2.4% 被判满仓止盈。
+            # 门槛用 tp_full 而非 cost：否则一个只比成本高 1.4%~6% 的侥幸存活档会成为实际止盈价，
+            # 与同一份报告里"止盈 成本×1.10"的文案和 alerts 的提醒自相矛盾(对抗性复核 finding 2)。
+            tp_floor = tp_full if cost_anchored else cost
+            dropped = [x for x in targets if x["low"] <= tp_floor]
+            targets = [x for x in targets if x["low"] > tp_floor]
+            # 写回 plan，让报告卡片渲染的阶梯与 advice 文案一致(对抗性复核 finding 3：
+            # 原先只存在 res["_eff_targets"] 里并在返回前 pop 掉，卡片仍渲染未过滤的 targets，
+            # MU 甚至出现"TP1 993.1 低于无效位 993.59"这种物理上不可能的计划)
+            plan["targets_effective"] = targets
+            plan["targets_dropped"] = dropped
+            res["_eff_targets"] = targets
+
             if invalid and price < invalid:
                 res["action"] = "清仓认错"
                 nxt = plan.get("if_invalid_next_support")
@@ -217,12 +243,18 @@ def advise(a: dict, item: dict, mmode: str, style: str = "tranche") -> dict:
                     f"价格低于无效位 {invalid}——抄底逻辑已失效"
                     + (f"，下一档支撑 {nxt['low']}–{nxt['high']}" if nxt else "")
                 )
-            elif targets and price >= targets[-1]["low"]:
+            elif cost_anchored and price >= tp_full:
+                res["action"] = "止盈减仓"
+                res["reasons"].append(
+                    f"已达成本×1.10 = {tp_full}（浮盈 {pnl:+.1f}%）——回测最优单一出场位，"
+                    f"{'单笔' if style == 'single' else style} 约束下全仓兑现"
+                )
+            elif not cost_anchored and targets and price >= targets[-1]["low"]:
                 res["action"] = "止盈减仓"
                 res["reasons"].append(
                     f"已达最后一档止盈区 {targets[-1]['low']}–{targets[-1]['high']}（浮盈 {pnl:+.1f}%）——按数据兑现大部，剩余把止损提到保本"
                 )
-            elif targets and price >= targets[0]["low"]:
+            elif not cost_anchored and targets and price >= targets[0]["low"]:
                 res["action"] = "止盈减仓"
                 nxt_t = targets[1] if len(targets) > 1 else None
                 res["reasons"].append(
@@ -231,10 +263,16 @@ def advise(a: dict, item: dict, mmode: str, style: str = "tranche") -> dict:
                 )
             else:
                 res["action"] = "持有"
-                if targets:
-                    res["reasons"].append(
-                        f"位于无效位 {invalid} 与 TP1 {targets[0]['low']} 之间，计划未走完（浮盈 {pnl:+.1f}%）"
-                    )
+                ref = (f"TP1 {targets[0]['low']}" if targets else f"成本×1.10 {tp_full}")
+                res["reasons"].append(
+                    f"位于无效位 {invalid} 与 {ref} 之间，计划未走完（浮盈 {pnl:+.1f}%）"
+                )
+            if dropped:
+                res["reasons"].append(
+                    "已剔除 {} 档不足以兑现的止盈位（".format(len(dropped))
+                    + ", ".join("{}-{}".format(x["low"], x["high"]) for x in dropped)
+                    + "）——那是按进场区算的目标，低于你这笔的出场线 {}".format(tp_floor)
+                )
 
         # 时间止损(2026-09-01锦标赛校准)：+10%目标叠加"15个交易日未达标离场"后，
         # 资金效率从0.272%/天升至0.298%/天且胜率略升；超时滞留仓位是负期望(-0.5%/笔)
@@ -281,6 +319,7 @@ def advise(a: dict, item: dict, mmode: str, style: str = "tranche") -> dict:
             )
         _build_orders(res, a, cost, mmode, style)
         res.pop("_rotation", None)
+        res.pop("_eff_targets", None)
         return res
 
     # ================= 候选侧（无持仓） =================

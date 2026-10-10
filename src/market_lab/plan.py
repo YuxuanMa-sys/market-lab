@@ -158,11 +158,42 @@ def stop_asof(ticker: str, asof: str) -> float | None:
         return None
 
 
+def _stop_hwm(ticker: str, since: str) -> float | None:
+    """持仓期内【每一天】的结构止损取最大值 —— 真正的止损棘轮。
+
+    原实现只比较买入日那一天(max(今日, 买入日))，那不是棘轮而是"地板"：
+    止损先随价格上行抬高、再随价格下行跌回买入日那个常量，中间抬上去的部分会丢。
+    2026-10-10 的对抗性复核把这个洞复现出来了(350.09 → 325.84，下移 0.90 ATR，
+    而止损单从未被触发)——形态与 2026-09-15 的 LITE/CRWV/NBIS 事故一致。
+
+    改成"持仓期逐日取 max"后单调性由构造保证：明天的候选集合 ⊇ 今天的，
+    所以明天的 max ≥ 今天的 max，不依赖任何落盘状态（云端每次 clone 都是干净的，
+    有状态的方案在那里本来也活不下来）。
+    """
+    import pandas as pd
+    try:
+        start = pd.Timestamp(since)
+    except Exception:
+        return None
+    from . import data
+    try:
+        idx = data.get_daily(ticker, "2y").index
+    except Exception:
+        return stop_asof(ticker, since)
+    days = [d for d in idx if d >= start]
+    if not days:
+        return stop_asof(ticker, since)
+    vals = [v for v in (stop_asof(ticker, d.strftime("%Y-%m-%d")) for d in days) if v is not None]
+    return max(vals) if vals else None
+
+
 def ratchet_invalid(plan: dict, ticker: str, since: str | None) -> dict:
-    """把 plan.invalid_below 抬到 max(买入日止损, 今日止损)。返回 {'ratcheted': bool, 'since_stop': x}。"""
+    """把 plan.invalid_below 抬到持仓期内结构止损的历史最高值（只升不降）。
+
+    返回 {'ratcheted': bool, 'since_stop': x}。"""
     if not since or not plan or plan.get("invalid_below") is None:
         return {"ratcheted": False, "since_stop": None}
-    s0 = stop_asof(ticker, str(since))
+    s0 = _stop_hwm(ticker, str(since))
     if s0 is None:
         return {"ratcheted": False, "since_stop": None}
     if s0 > plan["invalid_below"]:

@@ -12,7 +12,7 @@ from jinja2 import Template
 
 from . import data, market, stock
 from .advice import ACTION_URGENCY, URGENT_ACTIONS, advise, market_mode
-from .sizing import apply_sizing
+from .sizing import RISK_PER_TRADE_PCT, apply_sizing
 
 ROOT = Path(__file__).resolve().parents[2]
 REPORTS_DIR = ROOT / "reports"
@@ -116,9 +116,10 @@ tr:last-child td { border-bottom: none; }
 <table>
 <tr><th>票</th><th>现价</th><th>成本</th><th>止损价</th><th>距现价</th><th>备注</th></tr>
 {% for r in stop_sheet %}
-<tr><td><b>{{ r.ticker }}</b></td><td>{{ r.price }}</td><td>{{ r.cost }}</td><td><b>{{ r.stop }}</b></td>
-<td{% if r.dist_pct < 4 %} class="down"{% endif %}>{{ r.dist_pct }}%</td>
-<td class="muted">{% if r.locked_gain %}锁盈(止损>成本){% endif %}{% if r.dist_pct < 4 %} 一个ATR内，今日可能触发{% endif %}</td></tr>
+<tr><td><b>{{ r.ticker }}</b></td><td>{{ r.price }}</td><td>{{ r.cost }}</td>
+<td><b>{% if r.stop is not none %}{{ r.stop }}{% else %}<span class="down">无</span>{% endif %}</b></td>
+<td{% if r.dist_pct is not none and r.dist_pct < 4 %} class="down"{% endif %}>{% if r.dist_pct is not none %}{{ r.dist_pct }}%{% if r.dist_atr %} ({{ r.dist_atr }}ATR){% endif %}{% else %}-{% endif %}</td>
+<td class="muted">{% if r.warn %}<span class="down">{{ r.warn }}</span>{% else %}{% if r.locked_gain %}锁盈(止损>成本){% endif %}{% if r.dist_pct is not none and r.dist_pct < 4 %} 一个ATR内，今日可能触发{% endif %}{% endif %}</td></tr>
 {% endfor %}
 </table>
 <div class="muted">止损价=无效位(进场区下沿-0.75/1.0 ATR)。Stop Limit 请把 limit 设在止损价下方约1%防跳空不成交。</div>
@@ -198,7 +199,11 @@ VIX {{ mkt.vix.value }}（2年 {{ mkt.vix.percentile_2y|int }}% 分位{% if mkt.
   {% if s.plan and s.plan.status != "无计划" %}
   <div class="plan">
     📋 <b>{{ s.plan.status }}</b> · 进场参考区 <b>{{ s.plan.entry_zone.low }} – {{ s.plan.entry_zone.high }}</b>
-    {% if s.plan.targets %}· 止盈参考 {% for t in s.plan.targets %}<b>TP{{ loop.index }} {{ t.low }}–{{ t.high }}</b>（{{ "%+.1f%%"|format(t.pct_from_entry) }}）{% if not loop.last %} → {% endif %}{% endfor %}{% else %}· 基准目标 <b>{{ s.plan.fallback_target }}</b>（+{{ s.plan.pref_min_pct|int }}%）{% endif %}
+    {% set tg = s.plan.targets_effective if s.plan.targets_effective is defined else s.plan.targets %}
+    {% if tg %}· 止盈参考 {% for t in tg %}<b>TP{{ loop.index }} {{ t.low }}–{{ t.high }}</b>（{{ "%+.1f%%"|format(t.pct_from_entry) }}）{% if not loop.last %} → {% endif %}{% endfor %}
+    {% elif s.advice.pnl_pct is not none %}· 止盈 <b>{{ "%.2f"|format(s.advice.cost_tp) if s.advice.cost_tp else "成本×1.10" }}</b>（成本×1.10，压力区无更高目标）
+    {% else %}· 基准目标 <b>{{ s.plan.fallback_target }}</b>（+{{ s.plan.pref_min_pct|int }}%）{% endif %}
+    {% if s.plan.targets_dropped %}<span class="muted">（已剔除 {% for t in s.plan.targets_dropped %}{{ t.low }}–{{ t.high }}{% if not loop.last %}, {% endif %}{% endfor %}：按进场区算的目标，低于你这笔的出场线）</span>{% endif %}
     · 无效位 {{ s.plan.invalid_below }}{% if s.plan.if_invalid_next_support %}（破了看 {{ s.plan.if_invalid_next_support.low }}–{{ s.plan.if_invalid_next_support.high }}）{% endif %}
     {% if s.plan.risk_reward %} · 盈亏比 {{ s.plan.risk_reward }}{% endif %}
     <div class="muted">{{ s.plan.status_note }}；{{ s.plan.target_note }}</div>
@@ -317,24 +322,62 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     n_noop = len(ok_stocks) - len(order_sheet)
 
     # 今日止损单：每只持仓一行(票/现价/成本/止损价/距离)，按距离升序——用户每天早上照表挂 GTC 止损
+    # 2026-10-10 修复：原先 "没有止损单就 continue" 会把【裸奔的持仓】从表里静默抹掉，
+    # 而"这只票今天没有保护"恰恰是整张表最该喊出来的一行。现在每个持仓都占一行。
     stop_sheet = []
     for s in ok_stocks:
         item = wl_by_symbol.get(s["ticker"], {})
         if item.get("cost") is None:
             continue
-        stop_o = next((o for o in s["advice"].get("orders", []) if o["type"] == "止损"), None)
-        if not stop_o:
-            continue
-        price, stop, cost = s["price"], stop_o["price"], float(item["cost"])
-        stop_sheet.append({
-            "ticker": s["ticker"], "price": price, "cost": cost, "stop": stop,
-            "dist_pct": round((price - stop) / price * 100, 1),
-            "locked_gain": stop > cost,
-            "shares": stop_o.get("shares"), "usd": stop_o.get("usd"),
-        })
-    stop_sheet.sort(key=lambda r: r["dist_pct"])
-    # 紧凑版：一条推送放得下全部持仓
-    stop_line = " ".join(f"{r['ticker']}{r['stop']:g}" for r in stop_sheet)
+        adv = s["advice"]
+        stop_o = next((o for o in adv.get("orders", []) if o["type"] == "止损"), None)
+        price, cost, atr_v = s["price"], float(item["cost"]), s.get("atr") or 0
+        row = {
+            "ticker": s["ticker"], "price": price, "cost": cost,
+            "action": adv.get("action"),
+            "stop": None, "dist_pct": None, "dist_atr": None,
+            "locked_gain": False, "shares": None, "usd": None, "warn": "",
+        }
+        if stop_o:
+            stop = stop_o["price"]
+            row.update({
+                "stop": stop,
+                "dist_pct": round((price - stop) / price * 100, 1),
+                "dist_atr": round((price - stop) / atr_v, 2) if atr_v else None,
+                "locked_gain": stop > cost,
+                "shares": stop_o.get("shares"), "usd": stop_o.get("usd"),
+            })
+            # 噪音宽度告警：止损离现价不到 0.5 ATR，开盘的正常波动就能打掉它。
+            # 不改价格(那是风险参数，需要回测背书)，只把事实喊出来让人决定。
+            if row["dist_atr"] is not None and row["dist_atr"] < 0.5:
+                row["warn"] = (f"⚠ 仅 {row['dist_atr']} ATR({row['dist_pct']}%)——噪音宽度，"
+                               f"开盘波动极可能打掉；要么接受被扫，要么手动放宽到支撑区下沿")
+            elif row["dist_atr"] is not None and row["dist_atr"] > 3.0:
+                # 宽止损的问题通常不是"亏不起"(仓位小的话金额可能仍在预算内)，而是赔率：
+                # 用 -28% 的风险去换 +10% 的目标，R:R 只有 0.36:1，再高的胜率也难为正。
+                loss_pct = round(float(item.get("pct") or 0) * row["dist_pct"] / 100, 2)
+                rr = round(10.0 / row["dist_pct"], 2) if row["dist_pct"] else None
+                row["warn"] = (f"⚠ 远达 {row['dist_atr']} ATR({row['dist_pct']}%)：触发即亏账户 {loss_pct}%"
+                               f"（单笔预算 {RISK_PER_TRADE_PCT}%，金额{'仍在' if loss_pct <= RISK_PER_TRADE_PCT else '已超'}预算内）。"
+                               f"真正的问题是赔率——拿 {row['dist_pct']}% 风险换 +10% 目标，R:R 仅 {rr}:1；"
+                               f"你买在最近强支撑上方太远，这笔没有可用的紧止损，要么减仓要么认了这个赔率")
+        else:
+            sell_now = next((o for o in adv.get("orders", [])
+                             if o["side"] == "卖" and o["type"] == "限价"), None)
+            if sell_now:
+                row["warn"] = (f"⚠ 无止损单——动作是「{adv.get('action')}」，"
+                               f"按计划今天就该用 {sell_now['price']} 卖单离场，不是挂止损等")
+            else:
+                row["warn"] = (f"🔴 无止损单且无卖单——动作「{adv.get('action')}」下这个仓位今天是裸奔的，"
+                               f"需要人工决定止损位")
+        stop_sheet.append(row)
+    # 排序：裸奔/待离场的排最前，其余按距现价由近到远
+    stop_sheet.sort(key=lambda r: (r["stop"] is not None, r["dist_pct"] if r["dist_pct"] is not None else -999))
+    # 紧凑版：一条推送放得下全部持仓；没有止损的标成 ⚠ 而不是悄悄消失
+    stop_line = " ".join(
+        f"{r['ticker']}{r['stop']:g}" if r["stop"] is not None else f"{r['ticker']}⚠无止损"
+        for r in stop_sheet
+    )
 
     wl_symbols = {item["symbol"] for item in load_watchlist()}
     earnings = [e for e in data.get_earnings_calendar(14) if e.get("symbol") in wl_symbols]
