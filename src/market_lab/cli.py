@@ -71,11 +71,20 @@ def main() -> None:
         import pandas as pd
         from . import data
         from .report import load_watchlist
-        pos = {i["symbol"]: float(i["pct"]) for i in load_watchlist()
+        wl_all = load_watchlist()
+        pos = {i["symbol"]: float(i["pct"]) for i in wl_all
                if i.get("cost") is not None and i.get("pct")}
+        basis = "持仓组合(按pct加权)"
         if not pos:
-            print(json.dumps({"error": "watchlist 里没有带 pct 的持仓，无法构建组合基准"}, ensure_ascii=False))
-            return
+            # 空仓时的回退：用候选池等权组合当基准。空仓期筛新票仍需要分散度判断，
+            # 此时"与池子整体的相关性"是合理代理——低相关票在池里仍是独立弹药。
+            cand = [i["symbol"] for i in wl_all if i.get("cost") is None]
+            targets = {t.upper() for t in args.tickers}
+            pos = {t: 1.0 for t in cand if t.upper() not in targets}
+            basis = f"候选池等权({len(pos)}只，因当前空仓)"
+            if not pos:
+                print(json.dumps({"error": "watchlist 为空，无法构建基准"}, ensure_ascii=False))
+                return
         frames = {}
         for t, w in pos.items():
             try:
@@ -92,7 +101,9 @@ def main() -> None:
                 out[t] = round(float(c), 2)
             except Exception as e:
                 out[t] = f"FAIL: {e}"
-        print(json.dumps({"corr_vs_持仓组合": out, "阈值参考": "<0.4 好, 0.4-0.5 边缘, >0.5 不建议"}, ensure_ascii=False, indent=1))
+        print(json.dumps({"基准": basis, "corr_vs_基准": out,
+                          "阈值参考": "<0.4 好, 0.4-0.5 边缘, >0.5 不建议"},
+                         ensure_ascii=False, indent=1))
     elif args.cmd == "alerts":
         from .alerts import check
         from .report import load_watchlist
