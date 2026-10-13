@@ -35,34 +35,18 @@ tickers:
   - symbol: MRVL
     note: ""
   - symbol: IREN
-    cost: 40
-    pct: 5.53
-    shares: 40
-    since: 2026-10-01
     note: ""
   - symbol: WMT
     note: ""
   - symbol: CBRS
     note: ""
   - symbol: SNDK
-    cost: 1685
-    pct: 6.21
-    shares: 1
-    since: 2026-10-05
     note: ""
   - symbol: GOOGL
     note: ""
   - symbol: MU
-    cost: 1042
-    pct: 4.04
-    shares: 1
-    since: 2026-10-08
     note: ""
   - symbol: NBIS
-    cost: 234
-    pct: 6.08
-    shares: 7
-    since: 2026-10-06
     note: ""
   - symbol: GLW
     note: ""
@@ -85,10 +69,6 @@ tickers:
   - symbol: FN
     note: ""
   - symbol: AMKR
-    cost: 54.6
-    pct: 3.86
-    shares: 20
-    since: 2026-10-06
     note: ""
   - symbol: SOXX
     note: ""
@@ -131,6 +111,9 @@ tickers:
   - symbol: SOFI
     note: "金融科技；Q2超预期+上调指引，YTD深跌后被持续买回"
   - symbol: VST
+    cost: 157
+    pct: 6.27
+    since: 2026-10-12
     note: "电力/AI供电；与KKR/NVIDIA合资，距高点-24%，催化剂+深回调组合"
   - symbol: SYM
     note: "仓储机器人；GAAP已盈利，依赖沃尔玛大客户"
