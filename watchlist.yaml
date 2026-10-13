@@ -71,6 +71,9 @@ tickers:
   - symbol: AMKR
     note: ""
   - symbol: SOXX
+    cost: 531
+    pct: 6.47
+    since: 2026-10-13
     note: ""
   - symbol: LITE
     note: ""
@@ -103,6 +106,9 @@ tickers:
   - symbol: VKTX
     note: "生物医药/GLP-1减肥药；Q3维持给药数据读出，Ph3数据是二元风险，仓位按最高风险档"
   - symbol: SMMT
+    cost: 15.7
+    pct: 6.16
+    since: 2026-10-13
     note: "生物医药/PD-1双抗；PDUFA 2026-11-14 硬催化，CRL风险真实存在"
   - symbol: KTOS
     note: "国防/无人僚机；订单积压$2B，从$134腰斩到$60后企稳"
@@ -166,8 +172,4 @@ tickers:
     since: 2026-10-09
     note: "持仓；AI硬件中相关性最松的一员(暴跌日corr 0.43~0.49)"
   - symbol: ARM
-    cost: 270.1
-    pct: 5.23
-    shares: 5
-    since: 2026-10-09
     note: "持仓；芯片平台(暴跌日corr 0.73)"
