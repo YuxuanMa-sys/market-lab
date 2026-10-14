@@ -47,6 +47,9 @@ tickers:
   - symbol: MU
     note: ""
   - symbol: NBIS
+    cost: 187
+    pct: 5.27
+    since: 2026-10-14
     note: ""
   - symbol: GLW
     note: ""
@@ -55,10 +58,6 @@ tickers:
   - symbol: KLAC
     note: ""
   - symbol: CRWV
-    cost: 86.3
-    pct: 6.45
-    shares: 20
-    since: 2026-10-08
     note: ""
   - symbol: FORM
     note: ""
@@ -71,9 +70,6 @@ tickers:
   - symbol: AMKR
     note: ""
   - symbol: SOXX
-    cost: 531
-    pct: 6.47
-    since: 2026-10-13
     note: ""
   - symbol: LITE
     note: ""
@@ -117,9 +113,6 @@ tickers:
   - symbol: SOFI
     note: "金融科技；Q2超预期+上调指引，YTD深跌后被持续买回"
   - symbol: VST
-    cost: 157
-    pct: 6.27
-    since: 2026-10-12
     note: "电力/AI供电；与KKR/NVIDIA合资，距高点-24%，催化剂+深回调组合"
   - symbol: SYM
     note: "仓储机器人；GAAP已盈利，依赖沃尔玛大客户"
@@ -160,10 +153,6 @@ tickers:
     since: 2026-10-09
     note: "持仓；存储(暴跌日corr 0.77 vs MU/SNDK——同一场崩盘)"
   - symbol: HOOD
-    cost: 112.3
-    pct: 4.28
-    shares: 10
-    since: 2026-10-01
     note: "持仓；金融科技(暴跌日corr 0.62)——AI硬件以外唯一分散仓"
   - symbol: QCOM
     cost: 176.2
@@ -172,4 +161,7 @@ tickers:
     since: 2026-10-09
     note: "持仓；AI硬件中相关性最松的一员(暴跌日corr 0.43~0.49)"
   - symbol: ARM
+    cost: 240
+    pct: 4.82
+    since: 2026-10-14
     note: "持仓；芯片平台(暴跌日corr 0.73)"
