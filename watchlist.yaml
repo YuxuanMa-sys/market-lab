@@ -78,6 +78,9 @@ tickers:
   - symbol: COIN
     note: ""
   - symbol: SPCX
+    cost: 147
+    pct: 6
+    since: 2026-10-15
     note: ""
   - symbol: DELL
     note: ""
@@ -97,6 +100,9 @@ tickers:
   - symbol: TTWO
     note: "GTA VI 2026-11-19发售硬催化；corr 0.18；发售前sell-the-news风险"
   - symbol: SNPS
+    cost: 464
+    pct: 5.66
+    since: 2026-10-15
     note: "EDA龙头；corr 0.19(设计opex驱动,与设备capex错位)；8/26财报+16.8%——等回调"
   # ---- 2026-08-19 新增观察池（板块分散候选，非买入清单）----
   - symbol: VKTX
@@ -147,10 +153,6 @@ tickers:
     note: "企业SaaS/CRM平台；corr 0.05(近零相关，强分散)；10/6财报大超单日+20%(六年最强单日)，此前从52周高点$269回撤24%后被买回——回调有真实承接；风险：追高需等新回调才有安全边际，AI变现叙事若证伪估值重估风险大"
   # ---- 2026-10-10 新建持仓录入（pct = 用户报表值 ÷ 2）----
   - symbol: WDC
-    cost: 388
-    pct: 6.24
-    shares: 4
-    since: 2026-10-09
     note: "持仓；存储(暴跌日corr 0.77 vs MU/SNDK——同一场崩盘)"
   - symbol: HOOD
     note: "持仓；金融科技(暴跌日corr 0.62)——AI硬件以外唯一分散仓"
