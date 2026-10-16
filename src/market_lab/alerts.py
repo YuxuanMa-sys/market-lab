@@ -122,9 +122,25 @@ def check(watchlist: list[dict]) -> list[dict]:
         band = 2 if x["dip_est"] >= 70 else (1 if x["dip_est"] >= 55 else 0)
         x["_rank"] = (room > 0, band, x.pop("_zscore"))
     entries.sort(key=lambda x: x["_rank"], reverse=True)
-    for i, x in enumerate(entries, 1):
+    # 只有"盘中估分≥55 且簇有余量"的才编 P 号。2026-10-15 发现：30 分的 NU 被编成 P3，
+    # 而推送原文是"P1 最优先接"——一个未达进场线的票被包装成了买入推荐，用户自己也把盘中
+    # 推送称为"推荐进场点位"。本周 17 笔买入里 16 笔低于 55 分，这个呈现方式难辞其咎。
+    # 45-54 单列：盘中估分看不到"恐慌放量 +10"(合成K线用20日均量)，收盘放量后可能达标。
+    n = 0
+    for x in entries:
         x.pop("_rank")
-        x["priority"] = i
+        why = []
+        if x["dip_est"] < 55:
+            why.append(f"盘中估分 {x['dip_est']:.0f} 未达 55 进场线"
+                       + ("（收盘若放量>1.8倍可能+10分达标）" if x["dip_est"] >= 45 else ""))
         if x["cluster_room_pct"] <= 0:
-            x["note"] = (f"⚠「{x['cluster']}」簇已满,仅观察不建议接 — " + x["note"]).strip(" —")
+            why.append(f"「{x['cluster']}」簇已满")
+        if why:
+            x["priority"] = None
+            x["status"] = "观察"
+            x["note"] = ("观察，不是进场信号：" + "；".join(why) + (f" — {x['note']}" if x["note"] else ""))
+        else:
+            n += 1
+            x["priority"] = n
+            x["status"] = "候选"
     return others + entries

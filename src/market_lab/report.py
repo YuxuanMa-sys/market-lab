@@ -114,16 +114,17 @@ tr:last-child td { border-bottom: none; }
 <h2>🛡 今日止损单（全仓 GTC）</h2>
 <div class="card scroll">
 <table>
-<tr><th>票</th><th>股数</th><th>现价</th><th>成本</th><th>止损价</th><th>距现价</th><th>财报</th><th>备注</th></tr>
+<tr><th>票</th><th>股数</th><th>现价</th><th>成本</th><th>止损价</th><th>限价</th><th>距现价</th><th>财报</th><th>备注</th></tr>
 {% for r in stop_sheet %}
 <tr><td><b>{{ r.ticker }}</b></td><td>{{ r.shares if r.shares else "?" }}</td><td>{{ r.price }}</td><td>{{ r.cost }}</td>
 <td><b>{% if r.stop is not none %}{{ r.stop }}{% else %}<span class="down">无</span>{% endif %}</b></td>
+<td>{% if r.limit is defined and r.limit %}{{ r.limit }}{% else %}-{% endif %}</td>
 <td{% if r.dist_pct is not none and r.dist_pct < 4 %} class="down"{% endif %}>{% if r.dist_pct is not none %}{{ r.dist_pct }}%{% if r.dist_atr %} ({{ r.dist_atr }}ATR){% endif %}{% else %}-{% endif %}</td>
 <td{% if r.days_to_earnings is not none and r.days_to_earnings <= 21 %} class="down"{% endif %}>{% if r.earnings %}{{ r.earnings }}{% if r.days_to_earnings is not none %} ({{ r.days_to_earnings }}天){% endif %}{% else %}<span class="muted">未知</span>{% endif %}</td>
 <td class="muted">{% if r.warn %}<span class="down">{{ r.warn }}</span>{% else %}{% if r.locked_gain %}锁盈(止损>成本){% endif %}{% if r.dist_pct is not none and r.dist_pct < 4 %} 一个ATR内，今日可能触发{% endif %}{% endif %}</td></tr>
 {% endfor %}
 </table>
-<div class="muted">止损价=持仓期内结构止损的历史最高值（只升不降；单日值=支撑区下沿-0.75/1.0 ATR）。Stop Limit 请把 limit 设在止损价下方约1%防跳空不成交——注意财报是盘后发布，跳空发生在次日开盘，止损触发后按市价成交，成交价就是跳空后的价格而不是你挂的止损价。</div>
+<div class="muted">止损价=持仓期内结构止损的历史最高值（只升不降）。挂 <b>Stop Limit</b>：触发价填"止损价"，限价填"限价"列（= 止损价 − max(3%×止损价, 0.5×ATR)，已算好）。<b>触发后若开盘跳空跌破限价没成交，不要撤单；收盘前仍未成交就按市价卖出（看不了盘则最迟次日开盘卖）</b>，不要挂着等反弹——那等于取消了止损。也可直接用 Stop Loss（止损市价单），5年回测期望与此规则无差别，但跳空日会以开盘价成交。</div>
 </div>
 {% endif %}
 
@@ -376,6 +377,10 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
                 "locked_gain": stop > cost,
                 "shares": item.get("shares") or stop_o.get("shares"),
                 "usd": stop_o.get("usd"),
+                # Stop Limit 的限价：止损价 − max(3%×止损价, 0.5×ATR)。
+                # 5年回测240次止损(真实撮合)：-1%限价有8次整天没成交，此规则2次，-5%为0次；
+                # 期望值与止损市价单分不出差别(ΔR +0.006)。本周 SNDK 在-1%下至今未成交。
+                "limit": round(stop - max(0.03 * stop, 0.5 * atr_v), 2) if atr_v else round(stop * 0.97, 2),
             })
             # 噪音宽度告警：止损离现价不到 0.5 ATR，开盘的正常波动就能打掉它。
             # 不改价格(那是风险参数，需要回测背书)，只把事实喊出来让人决定。
@@ -405,7 +410,8 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     stop_sheet.sort(key=lambda r: (r["stop"] is not None, r["dist_pct"] if r["dist_pct"] is not None else -999))
     # 紧凑版：一条推送放得下全部持仓；没有止损的标成 ⚠ 而不是悄悄消失
     stop_line = " ".join(
-        f"{r['ticker']}{r['stop']:g}" if r["stop"] is not None else f"{r['ticker']}⚠无止损"
+        (f"{r['ticker']}{r['stop']:g}/{r['limit']:g}" if r.get("limit") else f"{r['ticker']}{r['stop']:g}")
+        if r["stop"] is not None else f"{r['ticker']}⚠无止损"
         for r in stop_sheet
     )
 
