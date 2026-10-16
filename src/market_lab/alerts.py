@@ -42,19 +42,20 @@ def check(watchlist: list[dict]) -> list[dict]:
             # 持仓票：盯防止损/止盈两侧(单笔挂单模式下,没挂的那一侧全靠这里提醒换单)
             cost = item.get("cost")
             if cost is not None:
-                from .indicators import atr as _atr
-                a_v = float(_atr(df).iloc[-1])
+                # 持仓止损必须与早报【同一条代码路径】算出来：用户照早报挂 GTC，盘中提醒若用另一套
+                # 简化算法，两者就会分叉。2026-10-15 实测：NBIS 早报止损 174.39、盘中旧算法 144.87
+                # （"接近止损"要到 ~161 才响，此时 GTC 早已触发）；SPCX 早报 138.87、盘中算不出止损。
+                # 根因是盘中路径的 build_zones 不带期权墙/分钟成交分布等 extra，强支撑区判定不同。
+                # 持仓通常只有几只，走一遍完整 analyze 的成本可以接受(不取新闻)。
+                from .stock import analyze
+                from .plan import ratchet_invalid
+                a_full = analyze(t, with_news=False, with_short=False)
+                plan_p = a_full.get("plan") or {}
+                if item.get("since"):
+                    ratchet_invalid(plan_p, t, str(item["since"]))   # 与 advise() 持仓分支同一棘轮
+                inv = plan_p.get("invalid_below")
+                a_v = float(a_full["atr"])
                 tp_full = float(cost) * 1.10
-                zones_p, _ = build_zones(df)
-                sup_p, _, ins_p = split_zones(zones_p, ref_close)
-                cand_p = ([ins_p] if ins_p else []) + sup_p
-                strong_p = [z for z in cand_p if z.score >= 4.0]
-                inv = (strong_p[0].low - 0.75 * a_v) if strong_p else None
-                if inv is not None and item.get("since"):
-                    from .plan import stop_asof
-                    s0 = stop_asof(t, str(item["since"]))
-                    if s0 is not None and s0 > inv:
-                        inv = s0  # 棘轮：持仓止损只升不降
                 chg = q.get("chg_pct")
                 if inv and last <= inv + 0.75 * a_v:
                     out.append({"ticker": t, "last": round(last, 2),
