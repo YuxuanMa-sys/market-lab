@@ -1,4 +1,9 @@
-"""盘中触发检查（轻量）：现价是否进入进场参考区，供每小时定时任务调用。
+"""盘中检查，供每小时定时任务调用。
+
+2026-10-17 起 check() 只做一件事：报告"今天盘中新进入低位"的自选股。用户自己看价格买、自己止损、自己卖，
+所以不再给进场区、止损、止盈。旧的进场区/持仓止损提醒保留为 check_trading()，需要时可切回。
+
+（以下为旧说明）盘中触发检查（轻量）：现价是否进入进场参考区。
 
 只做位置判断不做完整分析——抄底分依赖日线收盘，盘中给的是"到位提醒"，
 最终确认要等收盘后的报告。行情为15分钟延迟。
@@ -27,7 +32,7 @@ def _live_dip_estimate(df, last: float, sup, tol) -> float:
         return 0.0
 
 
-def check(watchlist: list[dict]) -> list[dict]:
+def check_trading(watchlist: list[dict]) -> list[dict]:
     out = []
     for item in watchlist:
         t = item["symbol"]
@@ -144,3 +149,75 @@ def check(watchlist: list[dict]) -> list[dict]:
             x["priority"] = n
             x["status"] = "候选"
     return others + entries
+
+
+_RANK = {None: 0, "接近低位": 1, "低位": 2, "深度低位": 3}
+
+
+def _price_hour_ago(ticker: str, minutes: int = 60) -> float | None:
+    """约一小时前的盘中价格（Polygon 分钟线）。用于判断"这一小时才刚跌进低位"，
+    避免同一只票整天每小时重复推送——云端每次运行都是全新副本，记不住上次推过什么。
+    盘中第一次检查（一小时前还没开盘）返回 None，此时与昨收比较。"""
+    try:
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        from .providers import polygon
+        now = datetime.now(ZoneInfo("America/New_York"))
+        j = polygon._get(f"/v2/aggs/ticker/{polygon._sym(ticker)}/range/1/minute/{now.date()}/{now.date()}",
+                         adjusted="true", sort="asc", limit=50000)
+        bars = j.get("results") or []
+        cut = (now - timedelta(minutes=minutes)).timestamp() * 1000
+        open_ms = now.replace(hour=9, minute=30, second=0, microsecond=0).timestamp() * 1000
+        if cut < open_ms:
+            return None
+        prior = [b for b in bars if open_ms <= b["t"] <= cut]
+        return float(prior[-1]["c"]) if prior else None
+    except Exception:
+        return None
+
+
+def check(watchlist: list[dict]) -> list[dict]:
+    """盘中新进入低位（低位 = 抄底分≥55，深度低位 ≥70；与早晚报的低位清单同一口径）。
+
+    条件：盘中估分所在档位 ≥ 低位，且高于"一小时前"的档位（盘中第一次检查时与昨收比）。
+    盘中估分把实时价当收盘价算（成交量用 20 日均量，看不到恐慌放量那 +10 分），所以要收盘确认。
+    """
+    from .report import _tier
+    out = []
+    for item in watchlist:
+        t = item["symbol"]
+        try:
+            df = data.get_daily(t, "2y")
+            q = data.get_quote(t)
+            if not q or not q.get("last"):
+                continue
+            last = float(q["last"])
+            zones, tol = build_zones(df)
+            sup_now, _, _ = split_zones(zones, last)
+            est = _live_dip_estimate(df, last, sup_now, tol)
+            tier_now = _tier(est)
+            if _RANK[tier_now] < _RANK["低位"]:
+                continue
+            p1h = _price_hour_ago(t)
+            if p1h is None:            # 盘中第一次检查：与昨收比
+                ref_close = float(df["Close"].iloc[-1])
+                sup_ref, _, _ = split_zones(zones, ref_close)
+                ref_est = dip_score(df, sup_ref, tol)["score"]
+                ref_label = "昨收"
+            else:
+                sup_ref, _, _ = split_zones(zones, p1h)
+                ref_est = _live_dip_estimate(df, p1h, sup_ref, tol)
+                ref_label = "一小时前"
+            if _RANK[tier_now] <= _RANK[_tier(ref_est)]:
+                continue
+            chg = q.get("chg_pct")
+            out.append({
+                "ticker": t, "kind": f"盘中进入{tier_now}", "tier": tier_now,
+                "last": round(last, 2), "chg_pct": round(chg, 2) if chg is not None else None,
+                "dip_est": round(est, 0), "ref_est": round(ref_est, 0), "ref": ref_label,
+                "held": item.get("cost") is not None, "note": item.get("note", ""),
+            })
+        except Exception:
+            continue
+    out.sort(key=lambda x: -x["dip_est"])
+    return out

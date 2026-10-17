@@ -95,6 +95,33 @@ tr:last-child td { border-bottom: none; }
   <div class="gauge" style="margin-top:8px">当前调度模式：<b>{{ mmode_desc }}</b></div>
 </div>
 
+<h2>📉 低位清单</h2>
+<div class="card">
+  {{ low_context.vix_line }}
+  <div class="muted" style="margin-top:4px">{{ low_context.definition }}</div>
+</div>
+{% if low_list %}
+<div class="card scroll">
+<table>
+<tr><th>票</th><th>档位</th><th>抄底分</th><th>现价</th><th>今日</th><th>RSI</th><th>低于20日线</th><th>20日回撤</th><th>距52周高</th><th>财报</th><th>为什么低</th></tr>
+{% for r in low_list %}
+<tr><td><b>{{ r.ticker }}</b>{% if r.held %} ★{% endif %}</td>
+<td{% if r.tier == "深度低位" %} class="down"{% endif %}><b>{{ r.tier }}</b></td>
+<td>{{ r.dip|int }}</td><td>{{ r.price }}</td>
+<td class="{{ 'up' if r.chg_pct > 0 else 'down' if r.chg_pct < 0 else '' }}">{{ "%+.1f%%"|format(r.chg_pct) }}</td>
+<td>{{ r.rsi }}</td><td>{{ "%.1f"|format(r.dev_atr) }} ATR</td>
+<td>{{ "%.0f%%"|format(r.dd20_pct) }}</td><td>{{ "%.0f%%"|format(r.off_52w_pct) }}</td>
+<td{% if r.days_to_earnings is not none and r.days_to_earnings <= 14 %} class="down"{% endif %}>{% if r.earnings %}{{ r.earnings }}{% if r.days_to_earnings is not none %}（{{ r.days_to_earnings }}天）{% endif %}{% else %}-{% endif %}</td>
+<td class="muted">{{ r.reasons|join("；") }}</td></tr>
+{% endfor %}
+</table>
+<div class="muted">★ = 持仓。档位：深度低位 抄底分≥70，低位 55–69，接近低位 45–54（收盘若恐慌放量可能升档）。只说明"现在低"，不提供买点、止损或卖点。</div>
+</div>
+{% else %}
+<div class="card muted">今天自选股里没有处在低位的票（抄底分都低于 45）。</div>
+{% endif %}
+
+{% if show_trading %}
 {% if order_sheet %}
 <h2>📋 今日操作单</h2>
 <div class="card scroll">
@@ -139,6 +166,7 @@ tr:last-child td { border-bottom: none; }
   {% for w in risk.warnings %}<div class="event">{{ w }}</div>{% endfor %}
 </div>
 {% endif %}
+{% endif %}
 
 <h2>指数与隔夜</h2>
 <div class="card scroll">
@@ -178,8 +206,8 @@ VIX {{ mkt.vix.value }}（2年 {{ mkt.vix.percentile_2y|int }}% 分位{% if mkt.
 </div>
 {% endfor %}
 
-<h2>自选股</h2>
-{% for s in stocks %}
+<h2>低位个股详情</h2>
+{% for s in card_stocks %}
 <div class="card">
   <div class="ticker-head">
     <span class="sym">{{ s.ticker }}</span>
@@ -191,15 +219,15 @@ VIX {{ mkt.vix.value }}（2年 {{ mkt.vix.percentile_2y|int }}% 分位{% if mkt.
     {% if s.short %}<span class="badge">空头:{% if s.short.si_pct_out is defined and s.short.si_pct_out is not none %} SI {{ s.short.si_pct_out }}%股本{% if s.short.si_change_pct is defined and s.short.si_change_pct is not none %}（上期{{ "%+.1f%%"|format(s.short.si_change_pct) }}）{% endif %}{% elif s.short.si_pct_float is defined and s.short.si_pct_float is not none %} SI {{ s.short.si_pct_float }}%流通盘{% endif %}{% if s.short.dtc is defined and s.short.dtc %} · 回补{{ s.short.dtc }}天{% endif %}{% if s.short.svr_5d is defined and s.short.svr_5d %} · 日做空量{{ s.short.svr_5d }}%(5日均){% endif %}{% if s.short.ctb_new is defined and s.short.ctb_new is not none %} · 借券费{{ s.short.ctb_new }}%{% endif %}</span>{% endif %}
     {% if s.note %}<span class="muted">备注: {{ s.note }}</span>{% endif %}
   </div>
-  {% if s.advice %}
+  {% if show_trading and s.advice %}
   <div class="advice{{ ' urgent' if s.advice.action in urgent_actions else '' }}">
     🎯 <b>{{ s.advice.action }}</b>{% if s.advice.pnl_pct is defined and s.advice.pnl_pct is not none %} <b>[持仓 · {{ s.advice.mode }} · 浮盈 {{ "%+.1f%%"|format(s.advice.pnl_pct) }}]</b>{% else %}（{{ s.advice.mode }}）{% endif %}
     — {{ s.advice.reasons|join("；") }}
     {% if s.advice.orders %}<div class="muted" style="margin-top:4px">{% for o in s.advice.orders %}📌 {{ o.side }}·{{ o.type }} @ <b>{{ o.price }}</b>（{{ o.portion }}）{{ o.note }}{% if not loop.last %}<br>{% endif %}{% endfor %}</div>{% endif %}
   </div>
   {% endif %}
-  {% if s.earnings_date %}<div class="event">📅 {{ s.earnings_date }} 财报——财报跳空会直接跳过支撑位，财报前带杠杆过夜等于赌跳空</div>{% endif %}
-  {% if s.plan and s.plan.status != "无计划" %}
+  {% if s.earnings_date %}<div class="event">📅 {{ s.earnings_date }} 财报——财报前后常有大幅跳空</div>{% endif %}
+  {% if show_trading and s.plan and s.plan.status != "无计划" %}
   <div class="plan">
     📋 <b>{{ s.plan.status }}</b> · 进场参考区 <b>{{ s.plan.entry_zone.low }} – {{ s.plan.entry_zone.high }}</b>
     {% set tg = s.plan.targets_effective if s.plan.targets_effective is defined else s.plan.targets %}
@@ -212,9 +240,12 @@ VIX {{ mkt.vix.value }}（2年 {{ mkt.vix.percentile_2y|int }}% 分位{% if mkt.
     <div class="muted">{{ s.plan.status_note }}；{{ s.plan.target_note }}</div>
   </div>
   {% endif %}
+  {% if show_trading %}
   {% for e in s.events %}<div class="event">⚠ {{ e.type }} {{ e.zone.low }}–{{ e.zone.high }}（{{ e.bars_ago }}个交易日前{% if e.vol_confirm %}，放量{% endif %}）</div>{% endfor %}
   {% if s.inside_zone %}<div class="event">现价处于 {{ s.inside_zone.low }}–{{ s.inside_zone.high }} 争夺区，多空正在这里交战</div>{% endif %}
-  {% if s.dip.reasons %}<div class="muted">抄底依据：{{ s.dip.reasons|join("；") }}</div>{% endif %}
+  {% endif %}
+  {% if s.low_reasons %}<div class="muted">为什么低：{{ s.low_reasons|join("；") }}</div>{% endif %}
+  {% if show_trading %}
   <div class="scroll" style="margin-top:8px">
   <table>
   <tr><th>方向</th><th>区间</th><th>距离</th><th>强度</th><th>依据</th><th>若跌破，下一档</th></tr>
@@ -227,6 +258,7 @@ VIX {{ mkt.vix.value }}（2年 {{ mkt.vix.percentile_2y|int }}% 分位{% if mkt.
   {% endfor %}
   </table>
   </div>
+  {% endif %}
   {% if s.news %}
   <ul class="news">
   {% for n in s.news[:4] %}<li>{% if n.sentiment %}<b class="{{ 'up' if n.sentiment == '利好' else 'down' if n.sentiment == '利空' else 'muted' }}">[{{ n.sentiment }}]</b> {% endif %}<a href="{{ n.url }}">{{ n.title }}</a> <span class="muted">{{ n.source }}</span></li>{% endfor %}
@@ -283,6 +315,72 @@ def load_order_style() -> str:
         return str(wl.get("order_style", "tranche"))
     except Exception:
         return "tranche"
+
+
+def _tier(dip: float) -> str | None:
+    if dip >= 70:
+        return "深度低位"
+    if dip >= 55:
+        return "低位"
+    if dip >= 45:
+        return "接近低位"
+    return None
+
+
+def build_low_list(ok_stocks: list[dict], wl_by_symbol: dict) -> list[dict]:
+    """低位清单：抄底分 ≥45 的自选股，按抄底分从高到低。
+
+    2026-10-17 起系统只做这一件事（用户："你就告诉我哪支票在低位就行，价格、止损、卖出我自己看"）。
+    为什么用抄底分定义"低位"：2026-10-17 的无偏全市场研究里，唯一在前后两半和 2022 都站得住的条件是
+    dip≥55 对 dip<55 —— 同样挂单深度下止跌率 37.2% 对 34.0%（+3.1pp，21日块 CI +1.9~+4.5）。
+    同一研究证明支撑区本身没有止跌能力（与随机价位无差），所以这里不给任何价位。
+    """
+    from .advice import _days_to
+    out = []
+    for s in ok_stocks:
+        dip = float(s["dip"]["score"])
+        tier = _tier(dip)
+        if tier is None:
+            continue
+        item = wl_by_symbol.get(s["ticker"], {})
+        df = data.get_daily(s["ticker"], "2y")
+        hi20 = float(df["High"].tail(20).max())
+        ma20 = (s.get("ma", {}).get(20) or {}).get("value")
+        out.append({
+            "ticker": s["ticker"], "held": item.get("cost") is not None, "tier": tier, "dip": dip,
+            "price": s["price"], "chg_pct": s["chg_pct"], "rsi": s["rsi"],
+            "dev_atr": round((s["price"] - ma20) / s["atr"], 2) if ma20 and s.get("atr") else 0.0,
+            "dd20_pct": round((s["price"] / hi20 - 1) * 100, 1) if hi20 else 0.0,
+            "off_52w_pct": round((s["price"] / s["high_52w"] - 1) * 100, 1) if s.get("high_52w") else 0.0,
+            "earnings": s.get("earnings_date"), "days_to_earnings": _days_to(s.get("earnings_date")),
+            # 抄底分里"贴近/距强支撑区"那一项照常计分（研究验证的就是这个分数），但不显示区间价位：
+            # 支撑区与随机价位止跌力无差，显示 "贴近强支撑区 137.39-152.10" 会被读成买点。
+            "reasons": [x for x in (s["dip"].get("reasons") or []) if "支撑区" not in x],
+            "note": item.get("note", ""),
+        })
+    out.sort(key=lambda r: -r["dip"])
+    return out
+
+
+def low_context(mkt: dict) -> dict:
+    """大盘环境一句话：VIX 档位与无偏回测里低位票的历史表现（全市场 2021-10→2026-10）。"""
+    v = (mkt.get("vix") or {}).get("value")
+    if v is None:
+        line = "VIX 取数失败。"
+    elif v < 18:
+        line = (f"VIX {v}（<18，平静）：全市场回测里这种环境下买低位票平均是亏的"
+                f"（每笔 −0.38%，n=11,025，显著为负）。")
+    elif v < 25:
+        line = f"VIX {v}（18–25，中性）：低位票历史表现接近持平。"
+    else:
+        line = (f"VIX {v}（≥25，恐慌）：历史上低位票反弹明显更好（每笔 +1.27%），"
+                f"但同日随机股票也一样好（+1.07%）——是大盘恐慌后的整体反弹，不是这些票特别。")
+    return {
+        "vix": v, "vix_line": line,
+        "definition": ("低位 = 抄底分高：RSI 超卖、低于 20 日线的幅度、20 日回撤、恐慌放量等打分。"
+                       "全市场 5 年回测里，抄底分≥55 的票之后止跌的概率比其余下跌票高约 3 个百分点（37% 对 34%）；"
+                       "它只说明\"现在低\"，不说明会涨，也不提供买点和止损。"),
+    }
 
 
 def generate(session: str = "premarket") -> tuple[Path, Path]:
@@ -416,7 +514,14 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     )
 
 
-    title = f"{'盘前' if session == 'premarket' else '盘后'}分析 · {now.strftime('%Y-%m-%d')}"
+    low_list = build_low_list(ok_stocks, wl_by_symbol)
+    low_ctx = low_context(mkt)
+    low_set = {r["ticker"] for r in low_list}
+    card_stocks = sorted([s for s in ok_stocks if s["ticker"] in low_set], key=lambda s: -s["dip"]["score"])
+    for s in card_stocks:
+        s["low_reasons"] = [x for x in (s["dip"].get("reasons") or []) if "支撑区" not in x]
+
+    title = f"{'盘前' if session == 'premarket' else '盘后'}低位清单 · {now.strftime('%Y-%m-%d')}"
     html = TEMPLATE.render(
         title=title,
         generated_at=now.strftime("%Y-%m-%d %H:%M %Z"),
@@ -429,6 +534,12 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         n_noop=n_noop,
         risk=risk_dashboard,
         stocks=ok_stocks,
+        card_stocks=card_stocks,
+        low_list=low_list,
+        low_context=low_ctx,
+        # 2026-10-17 用户决定自己看价格买、自己止损、自己卖：操作单/止损单/仓位仪表盘/支撑区计划不再展示。
+        # 代码和 JSON 字段保留，改回 True 即可恢复。
+        show_trading=False,
         err_stocks=[s for s in stocks if "error" in s],
         earnings=earnings,
         data_sources=(
@@ -445,7 +556,8 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     html_path.write_text(html, encoding="utf-8")
     json_path.write_text(
         json.dumps(
-            {"market_mode": mmode_desc, "order_sheet": order_sheet, "stop_sheet": stop_sheet, "stop_line": stop_line, "risk_dashboard": risk_dashboard,
+            {"low_list": low_list, "low_context": low_ctx,
+             "market_mode": mmode_desc, "order_sheet": order_sheet, "stop_sheet": stop_sheet, "stop_line": stop_line, "risk_dashboard": risk_dashboard,
              "market": mkt, "stocks": stocks, "earnings": earnings},
             ensure_ascii=False, indent=1, default=str,
         ),
