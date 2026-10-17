@@ -47,9 +47,6 @@ tickers:
   - symbol: MU
     note: ""
   - symbol: NBIS
-    cost: 187
-    pct: 5.27
-    since: 2026-10-14
     note: ""
   - symbol: GLW
     note: ""
@@ -100,9 +97,6 @@ tickers:
   - symbol: TTWO
     note: "GTA VI 2026-11-19发售硬催化；corr 0.18；发售前sell-the-news风险"
   - symbol: SNPS
-    cost: 464
-    pct: 5.66
-    since: 2026-10-15
     note: "EDA龙头；corr 0.19(设计opex驱动,与设备capex错位)；8/26财报+16.8%——等回调"
   # ---- 2026-08-19 新增观察池（板块分散候选，非买入清单）----
   - symbol: VKTX
