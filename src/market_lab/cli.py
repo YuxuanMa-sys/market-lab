@@ -37,6 +37,9 @@ def main() -> None:
     p_corr = sub.add_parser("corr", help="候选票与当前持仓组合的1年日收益相关性(分散度检验)")
     p_corr.add_argument("tickers", nargs="+")
 
+    p_hy = sub.add_parser("hygiene", help="周度维护的数据卫生检查：个股类型/价格/流动性/数据完整(不评价值不值得买)")
+    p_hy.add_argument("tickers", nargs="*", help="只查这些票；新票不在 watchlist 里也可以查。不填=查整个 watchlist")
+
     args = ap.parse_args()
 
     if args.cmd == "analyze":
@@ -104,6 +107,16 @@ def main() -> None:
         print(json.dumps({"基准": basis, "corr_vs_基准": out,
                           "阈值参考": "<0.4 好, 0.4-0.5 边缘, >0.5 不建议"},
                          ensure_ascii=False, indent=1))
+    elif args.cmd == "hygiene":
+        from .hygiene import check as hygiene_check
+        from .report import load_watchlist
+        wl_all = load_watchlist()
+        only = [t.upper() for t in args.tickers] or None
+        if only:   # 不在池子里的新候选也能查
+            known = {i["symbol"] for i in wl_all}
+            wl_all = wl_all + [{"symbol": t} for t in only if t not in known]
+        json.dump(hygiene_check(wl_all, only), sys.stdout, ensure_ascii=False, indent=1, default=str)
+        print()
     elif args.cmd == "alerts":
         from .alerts import check
         from .report import load_watchlist
