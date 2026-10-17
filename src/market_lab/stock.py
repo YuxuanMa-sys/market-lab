@@ -10,7 +10,14 @@ from .plan import trade_plan
 
 
 def dip_score(df: pd.DataFrame, supports: list, tol: float) -> dict:
-    """抄底评分 0-100：分数高 = 更接近"恐慌+靠近强支撑"的抄底条件。
+    """抄底评分 0-100：分数高 = 跌得更深（RSI 超卖、低于 20 日线、20 日回撤、恐慌放量；另含"贴近强支撑"项）。
+
+    2026-10-17 无偏全市场检验（H1 拟合 / H2 样本外，21 日块 bootstrap）：
+    - 8 个改版、5 个合成分、39–55 个候选因子都没有在 H2 校正后稳定胜过它，所以公式不改。
+    - 但它本身没有挑票能力：按日等权，dip≥55 对同日随机股 H2 −0.13pp [−0.49,+0.22]；
+      按事件加权的正超额完全来自崩盘日（那几天 ≥55 的票特别多）。
+    - 旧注释里"55-69 胜率 52.5%、+2.85%/笔"来自有偏的 52 只自选池，无偏样本上复现不出来。
+    - 只描述"跌得多深"，不代表更值得买。
 
     这不是买入信号，是把"这跌得够不够狠、位置好不好"量化出来。
     """
@@ -60,13 +67,13 @@ def dip_score(df: pd.DataFrame, supports: list, tol: float) -> dict:
 
     score = min(100.0, score)
     if score >= 70:
-        band = "深度恐慌区(回测:并不比55-69更优,别加倍)"
+        band = "深度低位(历史上不比55-69更好)"
     elif score >= 55:
-        band = "达进场线(回测胜率52.5%)"
+        band = "低位"
     elif score >= 45:
-        band = "接近(回测该段胜率仅38%,别动手)"
+        band = "接近低位"
     else:
-        band = "不在抄底区"
+        band = "不在低位"
     return {"score": round(score, 0), "band": band, "reasons": reasons}
 
 

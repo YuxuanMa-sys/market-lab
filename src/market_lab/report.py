@@ -103,19 +103,19 @@ tr:last-child td { border-bottom: none; }
 {% if low_list %}
 <div class="card scroll">
 <table>
-<tr><th>票</th><th>档位</th><th>抄底分</th><th>现价</th><th>今日</th><th>RSI</th><th>低于20日线</th><th>20日回撤</th><th>距52周高</th><th>财报</th><th>为什么低</th></tr>
+<tr><th>票</th><th>档位</th><th>抄底分</th><th>现价</th><th>今日</th><th>RSI</th><th>ATR%</th><th>低于20日线</th><th>20日回撤</th><th>距52周高</th><th>财报</th><th>为什么低</th></tr>
 {% for r in low_list %}
 <tr><td><b>{{ r.ticker }}</b>{% if r.held %} ★{% endif %}</td>
 <td{% if r.tier == "深度低位" %} class="down"{% endif %}><b>{{ r.tier }}</b></td>
 <td>{{ r.dip|int }}</td><td>{{ r.price }}</td>
 <td class="{{ 'up' if r.chg_pct > 0 else 'down' if r.chg_pct < 0 else '' }}">{{ "%+.1f%%"|format(r.chg_pct) }}</td>
-<td>{{ r.rsi }}</td><td>{{ "%.1f"|format(r.dev_atr) }} ATR</td>
+<td>{{ r.rsi }}</td><td>{{ r.atr_pct }}%</td><td>{{ "%.1f"|format(r.dev_atr) }} ATR</td>
 <td>{{ "%.0f%%"|format(r.dd20_pct) }}</td><td>{{ "%.0f%%"|format(r.off_52w_pct) }}</td>
 <td{% if r.days_to_earnings is not none and r.days_to_earnings <= 14 %} class="down"{% endif %}>{% if r.earnings %}{{ r.earnings }}{% if r.days_to_earnings is not none %}（{{ r.days_to_earnings }}天）{% endif %}{% else %}-{% endif %}</td>
 <td class="muted">{{ r.reasons|join("；") }}</td></tr>
 {% endfor %}
 </table>
-<div class="muted">★ = 持仓。档位：深度低位 抄底分≥70，低位 55–69，接近低位 45–54（收盘若恐慌放量可能升档）。只说明"现在低"，不提供买点、止损或卖点。</div>
+<div class="muted">★ = 持仓。档位：深度低位 抄底分≥70，低位 55–69，接近低位 45–54（收盘若恐慌放量可能升档）。只说明"现在跌得多深"，排序不代表更值得买；不提供买点、止损或卖点。</div>
 </div>
 {% else %}
 <div class="card muted">今天自选股里没有处在低位的票（抄底分都低于 45）。</div>
@@ -349,6 +349,7 @@ def build_low_list(ok_stocks: list[dict], wl_by_symbol: dict) -> list[dict]:
         out.append({
             "ticker": s["ticker"], "held": item.get("cost") is not None, "tier": tier, "dip": dip,
             "price": s["price"], "chg_pct": s["chg_pct"], "rsi": s["rsi"],
+            "atr_pct": round(s["atr"] / s["price"] * 100, 1) if s.get("atr") and s.get("price") else None,
             "dev_atr": round((s["price"] - ma20) / s["atr"], 2) if ma20 and s.get("atr") else 0.0,
             "dd20_pct": round((s["price"] / hi20 - 1) * 100, 1) if hi20 else 0.0,
             "off_52w_pct": round((s["price"] / s["high_52w"] - 1) * 100, 1) if s.get("high_52w") else 0.0,
@@ -363,23 +364,52 @@ def build_low_list(ok_stocks: list[dict], wl_by_symbol: dict) -> list[dict]:
 
 
 def low_context(mkt: dict) -> dict:
-    """大盘环境一句话：VIX 档位与无偏回测里低位票的历史表现（全市场 2021-10→2026-10）。"""
+    """清单开头的大盘环境句：择时（同状态下低位票与随机股各自的原始收益）和选股（低位票相对随机股）分开说。
+
+    数字来自 2026-10-17 无偏全市场研究（dip≥55，按日等权的 10 日收益，H1=2024-04-16 前 / H2=之后）。
+    主状态用"SPY 是否站上 200 日线"（H1 事先选定），VIX 作附注——不因 VIX 在 H2 的 R² 更高就事后换主状态。
+    注：这两张查表是研究最后一步补算的，没有经过独立复核（与已复核结果重合的数字一致）。
+    """
+    from . import data as _data
+    # (低位票原始 H1, H2, 随机股原始 H1, H2, 超额 H1, H2)
+    SPY_TBL = {"上": (-0.59, 0.05, -0.35, 0.23, -0.26, -0.18), "下": (1.20, 2.90, 0.45, 2.62, 0.77, 0.35)}
+    VIX_TBL = {"平静": (-0.16, -0.55, 0.13, -0.13, -0.30, -0.41), "中性": (-0.23, 1.14, -0.60, 0.96, 0.35, 0.20),
+               "恐慌": (1.19, 4.88, 0.63, 3.87, 0.58, 1.09)}
     v = (mkt.get("vix") or {}).get("value")
-    if v is None:
-        line = "VIX 取数失败。"
-    elif v < 18:
-        line = (f"VIX {v}（<18，平静）：全市场回测里这种环境下买低位票平均是亏的"
-                f"（每笔 −0.38%，n=11,025，显著为负）。")
-    elif v < 25:
-        line = f"VIX {v}（18–25，中性）：低位票历史表现接近持平。"
-    else:
-        line = (f"VIX {v}（≥25，恐慌）：历史上低位票反弹明显更好（每笔 +1.27%），"
-                f"但同日随机股票也一样好（+1.07%）——是大盘恐慌后的整体反弹，不是这些票特别。")
+    spy_side = spy_dist = None
+    try:
+        c = _data.get_daily("SPY", "2y")["Close"]
+        sma = float(c.tail(200).mean()); spy_dist = float(c.iloc[-1]) / sma - 1
+        spy_side = "上" if spy_dist >= 0 else "下"
+    except Exception:
+        pass
+    vix_state = None if v is None else ("平静" if v < 18 else ("中性" if v < 25 else "恐慌"))
+    parts = []
+    if spy_side:
+        a = SPY_TBL[spy_side]
+        parts.append(f"SPY {'站上' if spy_side == '上' else '跌破'} 200 日线（{spy_dist * 100:+.1f}%）")
+    if vix_state:
+        parts.append(f"VIX {v}（{vix_state}）")
+    line = "大盘环境：" + "，".join(parts) + "。" if parts else "大盘环境：取数失败。"
+    if spy_side:
+        a = SPY_TBL[spy_side]
+        line += (f"历史同状态下，低位票之后 10 天平均 {a[0]:+.1f}% / {a[1]:+.1f}%（前半/后半），"
+                 f"同日随机股 {a[2]:+.1f}% / {a[3]:+.1f}%；低位票相对随机股 {a[4]:+.2f} / {a[5]:+.2f} 个百分点。")
+    if vix_state:
+        b = VIX_TBL[vix_state]
+        line += f"按 VIX 档位：低位票 {b[0]:+.1f}% / {b[1]:+.1f}%，随机股 {b[2]:+.1f}% / {b[3]:+.1f}%。"
+    if spy_side == "下" or vix_state == "恐慌":
+        line += ("注意：这时的正收益主要是大盘反弹（随机股也涨），而且样本只有少数几段行情；"
+                 "2022 年那种长熊里只有约 +0.1%~+0.6%。")
+    elif spy_side == "上":
+        line += "即：现在这种环境，历史上没有顺风，低位票也没有选股优势。"
     return {
-        "vix": v, "vix_line": line,
-        "definition": ("低位 = 抄底分高：RSI 超卖、低于 20 日线的幅度、20 日回撤、恐慌放量等打分。"
-                       "全市场 5 年回测里，抄底分≥55 的票之后止跌的概率比其余下跌票高约 3 个百分点（37% 对 34%）；"
-                       "它只说明\"现在低\"，不说明会涨，也不提供买点和止损。"),
+        "vix": v, "spy_dist200": spy_dist, "vix_line": line,
+        "definition": ("低位 = 抄底分高（RSI 超卖、低于 20 日线的幅度、20 日回撤、恐慌放量），只描述\"跌得多深\"。"
+                       "全市场 5 年无偏回测：按日计算，低位票之后 10 天并不比同日随机股好；"
+                       "历史上的正收益主要出现在大盘崩盘之后（那时所有股票一起反弹）。"
+                       "清单按分数排序只表示跌得深浅，不代表排前面的更值得买。"
+                       "低位票买入后 10 天内的平均最大浮亏约 −6%（高波动票约 −7.4%）。"),
     }
 
 
