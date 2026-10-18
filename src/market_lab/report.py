@@ -95,6 +95,34 @@ tr:last-child td { border-bottom: none; }
   <div class="gauge" style="margin-top:8px">当前调度模式：<b>{{ mmode_desc }}</b></div>
 </div>
 
+<h2>📈 持仓高位分</h2>
+{% if high_list %}
+<div class="card">
+  {{ high_context.definition }}
+  <div class="muted" style="margin-top:4px">{{ high_context.market_line }}</div>
+</div>
+<div class="card scroll">
+<table>
+<tr><th>持仓</th><th>档位</th><th>高位分</th><th>昨日</th><th>现价</th><th>今日</th><th>RSI</th><th>ATR%</th><th>高于20日线</th><th>20日涨幅</th><th>距52周高</th><th>抄底分</th><th>财报</th><th>为什么高</th></tr>
+{% for r in high_list %}
+<tr><td><b>{{ r.ticker }}</b>{% if r.new_entry %} 🆕{% endif %}{% if r.extreme_runup %} ⚠{% endif %}</td>
+{% if r.error %}<td colspan="13" class="muted">取数失败：{{ r.error }}</td>{% else %}
+<td{% if r.tier == "深度高位" %} class="up"{% endif %}><b>{{ r.tier or "不在高位" }}</b></td>
+<td>{{ r.score if r.score is not none else "-" }}</td><td>{{ r.prev_score if r.prev_score is not none else "-" }}</td><td>{{ r.price }}</td>
+<td class="{{ 'up' if r.chg_pct > 0 else 'down' if r.chg_pct < 0 else '' }}">{{ "%+.1f%%"|format(r.chg_pct) }}</td>
+<td>{{ r.rsi14 }}</td><td>{{ r.atr_pct }}%</td><td>{{ "%.1f"|format(r.dev_atr) }} ATR</td>
+<td>{{ "%.0f%%"|format(r.runup20_pct) }}</td><td>{{ "%.0f%%"|format(r.dist52h_pct) if r.dist52h_pct is not none else "-" }}</td>
+<td>{{ r.dip|int }}</td>
+<td{% if r.days_to_earnings is not none and r.days_to_earnings <= 14 %} class="down"{% endif %}>{% if r.earnings %}{{ r.earnings }}{% if r.days_to_earnings is not none %}（{{ r.days_to_earnings }}天）{% endif %}{% else %}-{% endif %}</td>
+<td class="muted">{{ r.reasons|join("；") }}{% for n in r.notes %}<br>{{ n }}{% endfor %}</td>{% endif %}</tr>
+{% endfor %}
+</table>
+<div class="muted">档位：深度高位 ≥70，高位 55–69，接近高位 45–54。🆕 = 近 20 个交易日里第一次到 ≥55；⚠ = 实验性附注（20 日翻倍且高波动）。{{ high_context.footnote }}</div>
+</div>
+{% else %}
+<div class="card muted">holdings.txt 里没有持仓。</div>
+{% endif %}
+
 <h2>📉 低位清单</h2>
 <div class="card">
   {{ low_context.vix_line }}
@@ -398,6 +426,106 @@ def build_low_list(ok_stocks: list[dict], wl_by_symbol: dict, held: set[str] | N
     return out
 
 
+def _high_tier(score) -> str | None:
+    if score is None:
+        return None
+    if score >= 70:
+        return "深度高位"
+    if score >= 55:
+        return "高位"
+    if score >= 45:
+        return "接近高位"
+    return None
+
+
+# 推送/报告用语。数字全部来自 2026-10-18 高位分研究（无偏全市场面板，样本外 H2 = 2024-04-16→2026-10-15，
+# 4 路对抗复核后仍成立或已修正的版本）。不得改写成"容易回落/该卖了"——两半样本方向相反，研究明确禁止。
+HIGH_TEXT = {
+    "definition": ("高位分 = RSI 超买、高于 20 日线的幅度、20 日涨幅、放量上涨、贴近 52 周高，只描述\"最近涨得多猛\"。"
+                   "全市场 5 年无偏检验（含退市股）：高位分 ≥55 之后 10/20 天相对同日随机股 −0.4pp [−1.0,+0.1] / "
+                   "−0.5pp [−1.2,+0.1]（按事件平均 +0.1 / +0.2），≥70 也不比 55–69 更差——既不代表会回落，也不代表会继续涨。"),
+    "tier": {
+        "接近高位": "接近高位：最近涨得比较猛；历史上之后 10 天相对随机股 −0.3pp [−0.8,+0.1]，和随机没区别。",
+        "高位": "高位：历史上之后 10/20 天相对随机股 −0.5pp [−1.0,0.0] / −0.6pp [−1.3,0.0]，按事件平均约 0，校正后不显著。",
+        "深度高位": ("深度高位：历史上并不比 55–69 更容易回落；10 天相对随机股 −0.3pp [−0.9,+0.3]；"
+                    "10 天内跌到今天收盘下方 1 个 ATR 的概率 61%，所有股票 60%。"),
+    },
+    "pullback": ("10 天内回撤 1 个 ATR 很常见：高位票约 63%，所有股票约 60%；先碰 −1ATR 和先碰 +1ATR 约一半一半"
+                 "（46% 对 48%），不是信号。"),
+    "high_vol": ("高波动票到高位后振幅上下都更宽：10 天平均最深 −11.3%、最高 +13.3%（同波动的全部票 −9.2% / +11.3%），"
+                 "方向上没有可靠差别。"),
+    "spy_below": ("大盘在 200 日线下方：这时还在高位的多是低 β 抗跌股，历史上大盘随后反弹时它们常涨得少"
+                  "（样本外只有 2 段，10 天 −3.0pp，区间 [−5.8,+0.6] 含 0）。这是\"抗跌股跟不上反弹\"，不是\"会下跌\"。"),
+    "spy_above": "大盘在 200 日线上方（平常市况）：历史上高位票之后 10/20 天相对随机股 −0.2pp / −0.1pp，没有差别。",
+    "new_entry": ("近 20 个交易日里第一次到高位。历史上抄底买进的票第一次到 ≥55 时，继续拿 10/20 天相对大盘 "
+                  "−0.0pp / −0.3pp（区间含 0）；之后 20 天约 58% 还会再涨 ≥5%、约 57% 会回落 ≥5%（常常两种都发生）；"
+                  "\"一到高位就卖\"也不比在同样持有时长的随机时点卖更好。"),
+    "extreme": ("【实验性附注，事后发现，未经前瞻验证】近 20 天从低点涨了 {run:.0f}%（≥100%）且波动很大（ATR {atr:.0f}%）。"
+                "历史上这类票之后 10 天相对同波动票 −4.4pp [−5.7,−3.1]（前半段 −5.0），10 天原始收益中位数 −19%，"
+                "收涨的只有约 27%；换统计方法幅度在 −1.5 到 −4.4pp 之间。仅供参考，不是卖出建议。"),
+    "footnote": "数字是全市场历史平均，不含分红和交易成本，不代表你这只票；已有收购要约的票不适用。",
+}
+
+
+def build_high_list(ok_stocks: list[dict], holdings: list[str], errors: dict | None = None,
+                    spy_below: bool = False) -> list[dict]:
+    """持仓高位分：holdings.txt 里每只票一行（不论分数高低），按高位分从高到低。
+
+    2026-10-18 用户："每天更新持仓（不管本钱），给我票是否在高位的信号，也有分数，我自己考虑该不该卖"。
+    分数和文案的依据见 stock.high_score 与 HIGH_TEXT。不给卖点、止盈价。
+    """
+    from .advice import _days_to
+    from .stock import high_score
+    by = {s["ticker"]: s for s in ok_stocks}
+    out = []
+    for t in holdings:
+        s = by.get(t)
+        if s is None or not s.get("high"):
+            out.append({"ticker": t, "error": (errors or {}).get(t, "没有分析结果"), "score": None, "tier": None,
+                        "notes": []})
+            continue
+        h = s["high"]
+        f = h.get("facts") or {}
+        score = h.get("score")
+        df = data.get_daily(t, "2y")
+        prev = [high_score(df.iloc[:-i]).get("score") for i in range(1, 21) if len(df) - i >= 20]
+        prev_score = prev[0] if prev else None
+        new_entry = score is not None and score >= 55 and all((p is None or p < 55) for p in prev)
+        tier = _high_tier(score)
+        notes = []
+        if tier:
+            notes.append(HIGH_TEXT["tier"][tier])
+        if score is not None and score >= 55:
+            notes.append(HIGH_TEXT["pullback"])
+            if (f.get("atr_pct") or 0) >= 0.04:
+                notes.append(HIGH_TEXT["high_vol"])
+            if spy_below:
+                notes.append(HIGH_TEXT["spy_below"])
+        if new_entry:
+            notes.append(HIGH_TEXT["new_entry"])
+        if f.get("extreme_runup"):
+            notes.append(HIGH_TEXT["extreme"].format(run=f["runup20"] * 100, atr=f["atr_pct"] * 100))
+        out.append({
+            "ticker": t, "score": score, "prev_score": prev_score, "tier": tier, "band": h.get("band"),
+            "new_entry": new_entry, "extreme_runup": bool(f.get("extreme_runup")),
+            "price": s["price"], "chg_pct": s["chg_pct"], "rsi14": f.get("rsi14"),
+            "atr_pct": round(f["atr_pct"] * 100, 1) if f.get("atr_pct") is not None else None,
+            "dev_atr": f.get("dev_atr"), "runup20_pct": round(f.get("runup20", 0) * 100, 1),
+            "dist52h_pct": round(f["dist52h"] * 100, 1) if f.get("dist52h") is not None else None,
+            "dip": float(s["dip"]["score"]),
+            "earnings": s.get("earnings_date"), "days_to_earnings": _days_to(s.get("earnings_date")),
+            "reasons": h.get("reasons") or [], "notes": notes,
+        })
+    out.sort(key=lambda r: -(r["score"] if r.get("score") is not None else -1))
+    return out
+
+
+def high_context(spy_below: bool) -> dict:
+    return {"definition": HIGH_TEXT["definition"],
+            "market_line": HIGH_TEXT["spy_below" if spy_below else "spy_above"],
+            "footnote": HIGH_TEXT["footnote"]}
+
+
 def low_context(mkt: dict) -> dict:
     """清单开头的大盘环境句：择时（同状态下低位票与随机股各自的原始收益）和选股（低位票相对随机股）分开说。
 
@@ -582,12 +710,16 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
 
     low_list = build_low_list(ok_stocks, wl_by_symbol, set(holdings))
     low_ctx = low_context(mkt)
+    spy_below = low_ctx.get("spy_dist200") is not None and low_ctx["spy_dist200"] < 0
+    high_list = build_high_list(ok_stocks, holdings, {s["ticker"]: s["error"] for s in stocks if "error" in s},
+                                spy_below)
+    high_ctx = high_context(spy_below)
     low_set = {r["ticker"] for r in low_list}
     card_stocks = sorted([s for s in ok_stocks if s["ticker"] in low_set], key=lambda s: -s["dip"]["score"])
     for s in card_stocks:
         s["low_reasons"] = [x for x in (s["dip"].get("reasons") or []) if "支撑区" not in x]
 
-    title = f"{'盘前' if session == 'premarket' else '盘后'}低位清单 · {now.strftime('%Y-%m-%d')}"
+    title = f"{'盘前' if session == 'premarket' else '盘后'}持仓高位 + 低位清单 · {now.strftime('%Y-%m-%d')}"
     html = TEMPLATE.render(
         title=title,
         generated_at=now.strftime("%Y-%m-%d %H:%M %Z"),
@@ -603,6 +735,8 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         card_stocks=card_stocks,
         low_list=low_list,
         low_context=low_ctx,
+        high_list=high_list,
+        high_context=high_ctx,
         # 2026-10-17 用户决定自己看价格买、自己止损、自己卖：操作单/止损单/仓位仪表盘/支撑区计划不再展示。
         # 代码和 JSON 字段保留，改回 True 即可恢复。
         show_trading=False,
@@ -622,7 +756,8 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     html_path.write_text(html, encoding="utf-8")
     json_path.write_text(
         json.dumps(
-            {"holdings": holdings, "low_list": low_list, "low_context": low_ctx,
+            {"holdings": holdings, "high_list": high_list, "high_context": high_ctx,
+             "low_list": low_list, "low_context": low_ctx,
              "market_mode": mmode_desc, "order_sheet": order_sheet, "stop_sheet": stop_sheet, "stop_line": stop_line, "risk_dashboard": risk_dashboard,
              "market": mkt, "stocks": stocks, "earnings": earnings},
             ensure_ascii=False, indent=1, default=str,

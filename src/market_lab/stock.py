@@ -1,4 +1,4 @@
-"""个股分析：位置图谱 + 站稳/破位状态 + 抄底评分。"""
+"""个股分析：位置图谱 + 站稳/破位状态 + 抄底评分 + 高位分。"""
 from __future__ import annotations
 
 import pandas as pd
@@ -75,6 +75,93 @@ def dip_score(df: pd.DataFrame, supports: list, tol: float) -> dict:
     else:
         band = "不在低位"
     return {"score": round(score, 0), "band": band, "reasons": reasons}
+
+
+HIGH_MIN_BARS = 20      # MA20 / 20 日最低 / 20 日均量需要 20 根
+HIGH_52W_BARS = 252     # 52 周高项需要 252 根；不足 → 该项 0 分（研究主口径，= hs.pkl 的 m_pts_52h / mirror_v0）
+
+
+def high_band(score: float) -> str:
+    if score >= 70:
+        return "深度高位(历史上不比55-69更容易回落)"
+    if score >= 55:
+        return "高位"
+    if score >= 45:
+        return "接近高位"
+    return "不在高位"
+
+
+def high_score(df: pd.DataFrame) -> dict:
+    """高位分 0-100：分数高 = 最近涨得更猛（RSI 超买、高于 20 日线、20 日涨幅、放量上涨、贴近 52 周高）。
+    dip_score 的镜像，用户用它对自己的持仓判断"涨得够不够猛"，卖不卖自己定。
+
+    只描述"涨得多猛"，不预测会跌，也不是卖出信号。2026-10-18 无偏全市场检验（H1 设计 / H2 样本外，含退市；
+    6281 只票 × 5 年；4 路对抗复核；完整规格见研究存档 hs_spec.md）：
+    - ≥55 之后 10/20/60 日相对同日随机股：H2 按日 −0.4/−0.5/−1.3pp，区间全部含 0；按事件 +0.1/+0.2/+0.3pp。
+    - ≥70 不比 55–69 更差；10 天内回撤 1 个 ATR 的概率两半样本方向相反（不能写"更容易回落"）。
+    - 抄底买进后第一次到 ≥55，继续拿 10/20 天相对大盘 ≈0；"一到高位就卖"也不比同样持有时长的随机时点卖更好。
+    - 公式是事先登记的镜像版（mirror_v0），没有按收益调参；必须喂已收盘的日线（盘中当日成交量不全，量比会失真）。
+    """
+    n = len(df)
+    if n < HIGH_MIN_BARS:
+        return {"score": None, "band": "数据不足", "reasons": [f"只有 {n} 根日线，至少需要 {HIGH_MIN_BARS} 根"],
+                "facts": {"n_bars": n}}
+    close = df["Close"]
+    price = float(close.iloc[-1])
+    a = float(atr(df).iloc[-1])
+    r = float(rsi(close).iloc[-1])
+    ma20 = float(sma(close, 20).iloc[-1])
+    low20 = float(df["Low"].tail(20).min())
+    vol_ratio = float(df["Volume"].iloc[-1] / df["Volume"].tail(20).mean())
+
+    score = 0
+    reasons = []
+
+    if r > 75:
+        score += 30; reasons.append(f"RSI {r:.0f} 强超买")
+    elif r > 68:
+        score += 22; reasons.append(f"RSI {r:.0f} 超买")
+    elif r > 60:
+        score += 10; reasons.append(f"RSI {r:.0f} 偏强")
+
+    dev = (price - ma20) / a if a else 0  # 高于 20 日均线多少个 ATR
+    if dev > 3:
+        score += 25; reasons.append(f"高于20日均线 {dev:.1f} 个ATR，大幅偏离")
+    elif dev > 2:
+        score += 18; reasons.append(f"高于20日均线 {dev:.1f} 个ATR")
+    elif dev > 1:
+        score += 8; reasons.append(f"高于20日均线 {dev:.1f} 个ATR")
+
+    run = price / low20 - 1  # 从近 20 根（含今天）最低价算起的涨幅
+    if run > 0.15:
+        score += 15; reasons.append(f"近20日从低点涨了 {run * 100:.0f}%")
+    elif run > 0.08:
+        score += 10; reasons.append(f"近20日从低点涨了 {run * 100:.0f}%")
+
+    if vol_ratio > 1.8 and price > float(close.iloc[-2]):
+        score += 10; reasons.append(f"放量上涨(量比{vol_ratio:.1f})")
+
+    d52 = None
+    if n >= HIGH_52W_BARS:
+        hi52 = float(df["High"].tail(HIGH_52W_BARS).max())
+        d52 = price / hi52 - 1
+        if d52 >= -0.02:
+            score += 20; reasons.append(f"距52周高 {d52 * 100:+.1f}%，贴近一年高点")
+        elif d52 >= -0.05:
+            score += 10; reasons.append(f"距52周高 {d52 * 100:+.1f}%")
+    else:
+        reasons.append(f"上市不足一年（{n} 根日线），未计52周高项")
+
+    score = min(100, score)
+    atr_pct = a / price if price else float("nan")
+    facts = {
+        "n_bars": n, "rsi14": round(r, 1), "dev_atr": round(dev, 2), "runup20": round(run, 4),
+        "vol_ratio": round(vol_ratio, 2), "dist52h": None if d52 is None else round(d52, 4),
+        "atr_pct": round(atr_pct, 4),
+        # 实验性附注的触发条件（不计分）：近 20 日从低点翻倍且 ATR14/收盘 ≥10%
+        "extreme_runup": bool(run >= 1.0 and atr_pct >= 0.10),
+    }
+    return {"score": score, "band": high_band(score), "reasons": reasons, "facts": facts}
 
 
 def analyze(ticker: str, with_news: bool = True, with_short: bool = True) -> dict:
@@ -154,6 +241,7 @@ def analyze(ticker: str, with_news: bool = True, with_short: bool = True) -> dic
         "resistances": res_chain,
         "events": events,
         "dip": dip_score(df, supports, tol),
+        "high": high_score(df),
     }
     if walls:
         out["option_walls"] = walls
