@@ -71,13 +71,15 @@ def _ticker_type(ticker: str) -> tuple[str | None, bool | None]:
 
 
 def check(watchlist: list[dict], only: list[str] | None = None) -> dict:
+    from .report import load_holdings
+    holdings = set(load_holdings())
     cal = data.get_daily("SPY", "2y").index
     rows = []
     for item in watchlist:
         t = item["symbol"]
         if only and t not in only:
             continue
-        held = item.get("cost") is not None or item.get("pct") is not None
+        held = t in holdings or item.get("cost") is not None or item.get("pct") is not None
         row = {"ticker": t, "held": held}
         try:
             df = data.get_daily(t, "2y")

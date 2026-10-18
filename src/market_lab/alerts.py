@@ -182,9 +182,11 @@ def check(watchlist: list[dict]) -> list[dict]:
     条件：盘中估分所在档位 ≥ 低位，且高于"一小时前"的档位（盘中第一次检查时与昨收比）。
     盘中估分把实时价当收盘价算（成交量用 20 日均量，看不到恐慌放量那 +10 分），所以要收盘确认。
     """
-    from .report import _tier
+    from .report import _tier, load_holdings
+    held = set(load_holdings())
+    have = {i["symbol"] for i in watchlist}
     out = []
-    for item in watchlist:
+    for item in watchlist + [{"symbol": t} for t in held if t not in have]:
         t = item["symbol"]
         try:
             df = data.get_daily(t, "2y")
@@ -215,7 +217,7 @@ def check(watchlist: list[dict]) -> list[dict]:
                 "ticker": t, "kind": f"盘中进入{tier_now}", "tier": tier_now,
                 "last": round(last, 2), "chg_pct": round(chg, 2) if chg is not None else None,
                 "dip_est": round(est, 0), "ref_est": round(ref_est, 0), "ref": ref_label,
-                "held": item.get("cost") is not None, "note": item.get("note", ""),
+                "held": t in held, "note": item.get("note", ""),
             })
         except Exception:
             continue

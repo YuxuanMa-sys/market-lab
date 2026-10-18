@@ -308,6 +308,39 @@ def load_watchlist() -> list[dict]:
     return wl.get("tickers", [])
 
 
+HOLDINGS_FILE = ROOT / "holdings.txt"
+
+
+def parse_holdings(text: str) -> list[str]:
+    """holdings.txt：只写代码，空格/逗号/换行分隔都行，# 后面是注释。大小写不限，重复的去掉。"""
+    out: list[str] = []
+    for line in text.splitlines():
+        for tok in line.split("#", 1)[0].replace(",", " ").replace("，", " ").split():
+            t = tok.strip().upper()
+            if t and t not in out:
+                out.append(t)
+    return out
+
+
+def load_holdings() -> list[str]:
+    """用户当前持仓（只要代码，不要成本）。
+
+    2026-10-17 起持仓以 holdings.txt 为准——用户每天自己更新它，系统不管本钱多少。
+    文件不存在时回退到旧口径：watchlist.yaml 里带 cost/pct 字段的票。
+    """
+    if HOLDINGS_FILE.exists():
+        return parse_holdings(HOLDINGS_FILE.read_text(encoding="utf-8"))
+    return [i["symbol"] for i in load_watchlist()
+            if i.get("cost") is not None or i.get("pct") is not None]
+
+
+def load_universe() -> list[dict]:
+    """每天要分析的票 = watchlist ∪ 持仓。持仓里不在 watchlist 的票也要分析（要给它算高位分）。"""
+    wl = load_watchlist()
+    have = {i["symbol"] for i in wl}
+    return wl + [{"symbol": t} for t in load_holdings() if t not in have]
+
+
 def load_order_style() -> str:
     """挂单风格：single(单笔全仓,当前Fidelity适配) / oco / tranche(1/3梯次)。"""
     try:
@@ -327,7 +360,7 @@ def _tier(dip: float) -> str | None:
     return None
 
 
-def build_low_list(ok_stocks: list[dict], wl_by_symbol: dict) -> list[dict]:
+def build_low_list(ok_stocks: list[dict], wl_by_symbol: dict, held: set[str] | None = None) -> list[dict]:
     """低位清单：抄底分 ≥45 的自选股，按抄底分从高到低。
 
     2026-10-17 起系统只做这一件事（用户："你就告诉我哪支票在低位就行，价格、止损、卖出我自己看"）。
@@ -336,6 +369,8 @@ def build_low_list(ok_stocks: list[dict], wl_by_symbol: dict) -> list[dict]:
     同一研究证明支撑区本身没有止跌能力（与随机价位无差），所以这里不给任何价位。
     """
     from .advice import _days_to
+    if held is None:
+        held = {t for t, i in wl_by_symbol.items() if i.get("cost") is not None}
     out = []
     for s in ok_stocks:
         dip = float(s["dip"]["score"])
@@ -347,7 +382,7 @@ def build_low_list(ok_stocks: list[dict], wl_by_symbol: dict) -> list[dict]:
         hi20 = float(df["High"].tail(20).max())
         ma20 = (s.get("ma", {}).get(20) or {}).get("value")
         out.append({
-            "ticker": s["ticker"], "held": item.get("cost") is not None, "tier": tier, "dip": dip,
+            "ticker": s["ticker"], "held": s["ticker"] in held, "tier": tier, "dip": dip,
             "price": s["price"], "chg_pct": s["chg_pct"], "rsi": s["rsi"],
             "atr_pct": round(s["atr"] / s["price"] * 100, 1) if s.get("atr") and s.get("price") else None,
             "dev_atr": round((s["price"] - ma20) / s["atr"], 2) if ma20 and s.get("atr") else 0.0,
@@ -419,7 +454,8 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     mkt = market.overview(session)
 
     stocks = []
-    for item in load_watchlist():
+    holdings = load_holdings()
+    for item in load_universe():
         sym = item["symbol"]
         try:
             s = stock.analyze(sym)
@@ -436,7 +472,7 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     # 窗口从 14 天拉到 45 天：持仓窗口是 15 个交易日(≈21天)，14 天的前瞻看不到
     # 自己持有期内就会撞上的财报。watchlist 里可用 earnings: YYYY-MM-DD 钉住
     # 公司已确认、而 Finnhub 日历没覆盖到的日期（覆盖很稀：10 个持仓里只认得 2 个）。
-    wl_by_symbol = {i["symbol"]: i for i in load_watchlist()}
+    wl_by_symbol = {i["symbol"]: i for i in load_universe()}
     wl_symbols = set(wl_by_symbol)
     earnings = [e for e in data.get_earnings_calendar(45) if e.get("symbol") in wl_symbols]
     edates = {e["symbol"]: e["date"] for e in earnings}
@@ -544,7 +580,7 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     )
 
 
-    low_list = build_low_list(ok_stocks, wl_by_symbol)
+    low_list = build_low_list(ok_stocks, wl_by_symbol, set(holdings))
     low_ctx = low_context(mkt)
     low_set = {r["ticker"] for r in low_list}
     card_stocks = sorted([s for s in ok_stocks if s["ticker"] in low_set], key=lambda s: -s["dip"]["score"])
@@ -586,7 +622,7 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     html_path.write_text(html, encoding="utf-8")
     json_path.write_text(
         json.dumps(
-            {"low_list": low_list, "low_context": low_ctx,
+            {"holdings": holdings, "low_list": low_list, "low_context": low_ctx,
              "market_mode": mmode_desc, "order_sheet": order_sheet, "stop_sheet": stop_sheet, "stop_line": stop_line, "risk_dashboard": risk_dashboard,
              "market": mkt, "stocks": stocks, "earnings": earnings},
             ensure_ascii=False, indent=1, default=str,

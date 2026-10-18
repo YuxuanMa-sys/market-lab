@@ -34,3 +34,9 @@ def test_low_list_filters_sorts_and_hides_zone_prices(monkeypatch):
     assert all("支撑区" not in x for r in out for x in r["reasons"])
     assert out[1]["dd20_pct"] == -10.0                            # 90 / 100 - 1
     assert out[1]["dev_atr"] == -3.0                              # (90 - 99) / 3
+
+
+def test_parse_holdings_formats():
+    from market_lab.report import parse_holdings
+    txt = "# 注释\narm, qcom，smmt\n  SPCX  # 备注\nARM\n\n"
+    assert parse_holdings(txt) == ["ARM", "QCOM", "SMMT", "SPCX"]
