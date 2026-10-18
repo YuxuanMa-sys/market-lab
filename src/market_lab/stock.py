@@ -102,6 +102,12 @@ def high_score(df: pd.DataFrame) -> dict:
     - 抄底买进后第一次到 ≥55，继续拿 10/20 天相对大盘 ≈0；"一到高位就卖"也不比同样持有时长的随机时点卖更好。
     - 公式是事先登记的镜像版（mirror_v0），没有按收益调参；必须喂已收盘的日线（盘中当日成交量不全，量比会失真）。
     """
+    # 同一代码换过证券（例：SPCX 2026-06-12 之前是另一只 ~$22 的 ETF）：只用拼接点之后的真实历史，
+    # 与研究面板的拼接截断同口径；否则 20 日涨幅会从旧证券的低点量起（实测 606%，误触发⚠附注）。
+    from .hygiene import find_splices
+    spl = find_splices(df) if len(df) > 1 else []
+    if spl:
+        df = df.loc[pd.Timestamp(spl[-1]["after"]):]
     n = len(df)
     if n < HIGH_MIN_BARS:
         return {"score": None, "band": "数据不足", "reasons": [f"只有 {n} 根日线，至少需要 {HIGH_MIN_BARS} 根"],
@@ -157,7 +163,7 @@ def high_score(df: pd.DataFrame) -> dict:
     facts = {
         "n_bars": n, "rsi14": round(r, 1), "dev_atr": round(dev, 2), "runup20": round(run, 4),
         "vol_ratio": round(vol_ratio, 2), "dist52h": None if d52 is None else round(d52, 4),
-        "atr_pct": round(atr_pct, 4),
+        "atr_pct": atr_pct,          # 不取整：高波动句的门槛是 ≥4%，取整会把 3.997% 算进去
         # 实验性附注的触发条件（不计分）：近 20 日从低点翻倍且 ATR14/收盘 ≥10%
         "extreme_runup": bool(run >= 1.0 and atr_pct >= 0.10),
     }

@@ -79,7 +79,7 @@ def check(watchlist: list[dict], only: list[str] | None = None) -> dict:
         t = item["symbol"]
         if only and t not in only:
             continue
-        held = t in holdings or item.get("cost") is not None or item.get("pct") is not None
+        held = t in holdings          # load_holdings() 在没有 holdings.txt 时才回退到 cost/pct 口径
         row = {"ticker": t, "held": held}
         try:
             df = data.get_daily(t, "2y")

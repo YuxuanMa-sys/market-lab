@@ -106,18 +106,19 @@ tr:last-child td { border-bottom: none; }
 <tr><th>持仓</th><th>档位</th><th>高位分</th><th>昨日</th><th>现价</th><th>今日</th><th>RSI</th><th>ATR%</th><th>高于20日线</th><th>20日涨幅</th><th>距52周高</th><th>抄底分</th><th>财报</th><th>为什么高</th></tr>
 {% for r in high_list %}
 <tr><td><b>{{ r.ticker }}</b>{% if r.new_entry %} 🆕{% endif %}{% if r.extreme_runup %} ⚠{% endif %}</td>
-{% if r.error %}<td colspan="13" class="muted">取数失败：{{ r.error }}</td>{% else %}
+{% if r.error %}<td colspan="13" class="muted">{{ r.band or "取数失败" }}：{{ r.error }}</td>{% else %}
 <td{% if r.tier == "深度高位" %} class="up"{% endif %}><b>{{ r.tier or "不在高位" }}</b></td>
 <td>{{ r.score if r.score is not none else "-" }}</td><td>{{ r.prev_score if r.prev_score is not none else "-" }}</td><td>{{ r.price }}</td>
 <td class="{{ 'up' if r.chg_pct > 0 else 'down' if r.chg_pct < 0 else '' }}">{{ "%+.1f%%"|format(r.chg_pct) }}</td>
-<td>{{ r.rsi14 }}</td><td>{{ r.atr_pct }}%</td><td>{{ "%.1f"|format(r.dev_atr) }} ATR</td>
-<td>{{ "%.0f%%"|format(r.runup20_pct) }}</td><td>{{ "%.0f%%"|format(r.dist52h_pct) if r.dist52h_pct is not none else "-" }}</td>
+<td>{{ r.rsi14 if r.rsi14 is not none else "-" }}</td><td>{{ "%s%%"|format(r.atr_pct) if r.atr_pct is not none else "-" }}</td>
+<td>{{ "%.1f ATR"|format(r.dev_atr) if r.dev_atr is not none else "-" }}</td>
+<td>{{ "%.0f%%"|format(r.runup20_pct) if r.runup20_pct is not none else "-" }}</td><td>{{ "%.0f%%"|format(r.dist52h_pct) if r.dist52h_pct is not none else "-" }}</td>
 <td>{{ r.dip|int }}</td>
 <td{% if r.days_to_earnings is not none and r.days_to_earnings <= 14 %} class="down"{% endif %}>{% if r.earnings %}{{ r.earnings }}{% if r.days_to_earnings is not none %}（{{ r.days_to_earnings }}天）{% endif %}{% else %}-{% endif %}</td>
 <td class="muted">{{ r.reasons|join("；") }}{% for n in r.notes %}<br>{{ n }}{% endfor %}</td>{% endif %}</tr>
 {% endfor %}
 </table>
-<div class="muted">档位：深度高位 ≥70，高位 55–69，接近高位 45–54。🆕 = 近 20 个交易日里第一次到 ≥55；⚠ = 实验性附注（20 日翻倍且高波动）。{{ high_context.footnote }}</div>
+<div class="muted">档位：深度高位 ≥70，高位 55–69，接近高位 45–54。🆕 = 写进 holdings.txt 以来第一次到 ≥55；⚠ = 实验性附注（20 日翻倍且高波动）。{{ high_context.footnote }}</div>
 </div>
 {% else %}
 <div class="card muted">holdings.txt 里没有持仓。</div>
@@ -443,21 +444,24 @@ def _high_tier(score) -> str | None:
 HIGH_TEXT = {
     "definition": ("高位分 = RSI 超买、高于 20 日线的幅度、20 日涨幅、放量上涨、贴近 52 周高，只描述\"最近涨得多猛\"。"
                    "全市场 5 年无偏检验（含退市股）：高位分 ≥55 之后 10/20 天相对同日随机股 −0.4pp [−1.0,+0.1] / "
-                   "−0.5pp [−1.2,+0.1]（按事件平均 +0.1 / +0.2），≥70 也不比 55–69 更差——既不代表会回落，也不代表会继续涨。"),
+                   "−0.5pp [−1.2,+0.1]（按事件平均 +0.1 / +0.2），≥70 也不比 55–69 更差——既不代表会回落，也不代表会继续涨。"
+                   "不是卖出信号。"),
     "tier": {
         "接近高位": "接近高位：最近涨得比较猛；历史上之后 10 天相对随机股 −0.3pp [−0.8,+0.1]，和随机没区别。",
-        "高位": "高位：历史上之后 10/20 天相对随机股 −0.5pp [−1.0,0.0] / −0.6pp [−1.3,0.0]，按事件平均约 0，校正后不显著。",
+        "高位": ("高位：高位分只衡量\"最近涨得多猛\"，不是卖出信号。历史上之后 10/20 天相对随机股 −0.5pp [−1.0,0.0] / "
+                "−0.6pp [−1.3,0.0]，按事件平均约 0，校正后不显著——所以既不代表会回落，也不代表会继续涨。"),
         "深度高位": ("深度高位：历史上并不比 55–69 更容易回落；10 天相对随机股 −0.3pp [−0.9,+0.3]；"
                     "10 天内跌到今天收盘下方 1 个 ATR 的概率 61%，所有股票 60%。"),
     },
-    "pullback": ("10 天内回撤 1 个 ATR 很常见：高位票约 63%，所有股票约 60%；先碰 −1ATR 和先碰 +1ATR 约一半一半"
-                 "（46% 对 48%），不是信号。"),
+    "pullback": ("10 天内回撤 1 个 ATR 很常见：高位票约 63% [60,66]（前半段 58%，两段方向相反），所有股票约 60%；"
+                 "先碰 −1ATR 和先碰 +1ATR 约一半一半（46% 对 48%），不是信号。"),
     "high_vol": ("高波动票到高位后振幅上下都更宽：10 天平均最深 −11.3%、最高 +13.3%（同波动的全部票 −9.2% / +11.3%），"
                  "方向上没有可靠差别。"),
     "spy_below": ("大盘在 200 日线下方：这时还在高位的多是低 β 抗跌股，历史上大盘随后反弹时它们常涨得少"
                   "（样本外只有 2 段，10 天 −3.0pp，区间 [−5.8,+0.6] 含 0）。这是\"抗跌股跟不上反弹\"，不是\"会下跌\"。"),
     "spy_above": "大盘在 200 日线上方（平常市况）：历史上高位票之后 10/20 天相对随机股 −0.2pp / −0.1pp，没有差别。",
-    "new_entry": ("近 20 个交易日里第一次到高位。历史上抄底买进的票第一次到 ≥55 时，继续拿 10/20 天相对大盘 "
+    "new_entry": ("这是写进持仓（{since}）以来第一次到高位。如果这是你低位买进后第一次涨到高位："
+                  "历史上抄底买进的票第一次到 ≥55 时（样本外 5,617 次），继续拿 10/20 天相对大盘 "
                   "−0.0pp / −0.3pp（区间含 0）；之后 20 天约 58% 还会再涨 ≥5%、约 57% 会回落 ≥5%（常常两种都发生）；"
                   "\"一到高位就卖\"也不比在同样持有时长的随机时点卖更好。"),
     "extreme": ("【实验性附注，事后发现，未经前瞻验证】近 20 天从低点涨了 {run:.0f}%（≥100%）且波动很大（ATR {atr:.0f}%）。"
@@ -467,8 +471,67 @@ HIGH_TEXT = {
 }
 
 
+def holding_since(holdings: list[str]) -> dict[str, str | None]:
+    """每只持仓"从哪天起在 holdings.txt 里"（YYYY-MM-DD）。用户不记成本也不记日期，所以从 git 历史里读：
+    按时间顺序回放 holdings.txt 的每个版本，取这只票最近一次被加进去的提交日期（卖掉再买回会重新计）。
+    - 文件最早版本里就有的票：如果 watchlist 里有更早的 since（旧口径的买入日），用它。
+    - 工作区里新加、还没提交的票：记为今天。
+    - git 不可用，或浅克隆导致看不到这只票是哪天加的：None（这时不判断"第一次到高位"）。
+    "卖 vs 继续拿"那句只适用于持有后第一次 ≥55（研究口径），需要这个日期才能判断。
+    """
+    import subprocess
+    from datetime import date as _date
+    out: dict[str, str | None] = {t: None for t in holdings}
+    try:
+        def _git(*a):
+            return subprocess.run(["git", "-C", str(ROOT), *a], capture_output=True, text=True,
+                                  timeout=30, check=True).stdout
+        commits = [ln.split() for ln in _git("log", "--reverse", "--format=%H %cs", "--", "holdings.txt").splitlines()
+                   if ln.strip()]
+        shallow = _git("rev-parse", "--is-shallow-repository").strip() == "true"
+        added: dict[str, tuple[str, bool]] = {}
+        prev: set[str] = set()
+        for i, (h, d) in enumerate(commits):
+            try:
+                cur = set(parse_holdings(_git("show", f"{h}:holdings.txt")))
+            except Exception:
+                cur = set()
+            for t in cur - prev:
+                added[t] = (d, i == 0)
+            for t in prev - cur:
+                added.pop(t, None)
+            prev = cur
+    except Exception:
+        return out
+    wl = {i["symbol"]: i for i in load_watchlist()}
+    today = _date.today().isoformat()
+    for t in holdings:
+        if t not in prev:                      # 已写进文件但还没提交
+            out[t] = today
+            continue
+        d, in_first = added.get(t, (None, True))
+        ws = wl.get(t, {}).get("since")
+        if in_first:
+            if ws:
+                d = min(str(ws), d) if d else str(ws)
+            elif shallow:
+                d = None                       # 浅克隆：最早可见版本之前的历史看不到
+        out[t] = d
+    return out
+
+
+def first_high_since(df, since: str | None, score) -> bool:
+    """今天 ≥55，且从 since 当天起（不含今天）没有任何一天 ≥55。since 未知时返回 False。最多回看 252 根。"""
+    import pandas as pd
+    from .stock import high_score
+    if since is None or score is None or score < 55:
+        return False
+    idx = df.index[(df.index >= pd.Timestamp(since)) & (df.index < df.index[-1])][-252:]
+    return all((high_score(df.loc[:d]).get("score") or 0) < 55 for d in idx)
+
+
 def build_high_list(ok_stocks: list[dict], holdings: list[str], errors: dict | None = None,
-                    spy_below: bool = False) -> list[dict]:
+                    spy_below: bool = False, since: dict | None = None) -> list[dict]:
     """持仓高位分：holdings.txt 里每只票一行（不论分数高低），按高位分从高到低。
 
     2026-10-18 用户："每天更新持仓（不管本钱），给我票是否在高位的信号，也有分数，我自己考虑该不该卖"。
@@ -487,10 +550,14 @@ def build_high_list(ok_stocks: list[dict], holdings: list[str], errors: dict | N
         h = s["high"]
         f = h.get("facts") or {}
         score = h.get("score")
+        t_since = (since or {}).get(t)
+        if score is None:          # 历史太短（新股/刚复牌），无法评分：走"无法评分"行，模板不格式化空字段
+            out.append({"ticker": t, "error": "；".join(h.get("reasons") or ["数据不足"]), "score": None,
+                        "tier": None, "band": h.get("band"), "since": t_since, "notes": []})
+            continue
         df = data.get_daily(t, "2y")
-        prev = [high_score(df.iloc[:-i]).get("score") for i in range(1, 21) if len(df) - i >= 20]
-        prev_score = prev[0] if prev else None
-        new_entry = score is not None and score >= 55 and all((p is None or p < 55) for p in prev)
+        prev_score = high_score(df.iloc[:-1]).get("score") if len(df) > 1 else None
+        new_entry = first_high_since(df, t_since, score)
         tier = _high_tier(score)
         notes = []
         if tier:
@@ -502,15 +569,15 @@ def build_high_list(ok_stocks: list[dict], holdings: list[str], errors: dict | N
             if spy_below:
                 notes.append(HIGH_TEXT["spy_below"])
         if new_entry:
-            notes.append(HIGH_TEXT["new_entry"])
+            notes.append(HIGH_TEXT["new_entry"].format(since=t_since))
         if f.get("extreme_runup"):
             notes.append(HIGH_TEXT["extreme"].format(run=f["runup20"] * 100, atr=f["atr_pct"] * 100))
         out.append({
             "ticker": t, "score": score, "prev_score": prev_score, "tier": tier, "band": h.get("band"),
-            "new_entry": new_entry, "extreme_runup": bool(f.get("extreme_runup")),
+            "since": t_since, "new_entry": new_entry, "extreme_runup": bool(f.get("extreme_runup")),
             "price": s["price"], "chg_pct": s["chg_pct"], "rsi14": f.get("rsi14"),
             "atr_pct": round(f["atr_pct"] * 100, 1) if f.get("atr_pct") is not None else None,
-            "dev_atr": f.get("dev_atr"), "runup20_pct": round(f.get("runup20", 0) * 100, 1),
+            "dev_atr": f.get("dev_atr"), "runup20_pct": round(f["runup20"] * 100, 1) if f.get("runup20") is not None else None,
             "dist52h_pct": round(f["dist52h"] * 100, 1) if f.get("dist52h") is not None else None,
             "dip": float(s["dip"]["score"]),
             "earnings": s.get("earnings_date"), "days_to_earnings": _days_to(s.get("earnings_date")),
@@ -712,7 +779,7 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     low_ctx = low_context(mkt)
     spy_below = low_ctx.get("spy_dist200") is not None and low_ctx["spy_dist200"] < 0
     high_list = build_high_list(ok_stocks, holdings, {s["ticker"]: s["error"] for s in stocks if "error" in s},
-                                spy_below)
+                                spy_below, holding_since(holdings))
     high_ctx = high_context(spy_below)
     low_set = {r["ticker"] for r in low_list}
     card_stocks = sorted([s for s in ok_stocks if s["ticker"] in low_set], key=lambda s: -s["dip"]["score"])
