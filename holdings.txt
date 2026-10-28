@@ -1,4 +1,4 @@
 # 我的持仓：只写代码，不用写成本。空格、逗号、换行分隔都行；# 后面是注释。
 # 每天收盘后（或任何时候）更新一次即可。系统以这个文件为准判断哪些票是持仓（★），
 # 并对这里的每只票算高位分。不在 watchlist 里的票也可以写。
-ARM QCOM SMMT IREN CBRS CRWV FIGR
+QCOM IREN CBRS CRWV IREN LITE KLAC INTC FORM RGR NU
