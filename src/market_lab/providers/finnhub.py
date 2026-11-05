@@ -5,7 +5,7 @@ import os
 import sys as _sys
 import threading
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
@@ -36,12 +36,13 @@ def _get(path: str, **params) -> dict | list:
 
 
 CAL_ROW_CAP = 1500      # Finnhub 单次响应的硬上限（实测）
-CAL_CHUNK_DAYS = 5      # 分片宽度。财报季高峰(10月下旬-11月初)14天分片仍会触到1500上限，
-                        # 实测需要收到 5 天；上面的告警会在再次封顶时喊出来
+CAL_CHUNK_DAYS = 5      # 分片宽度。财报季高峰一片还会封顶（2026-11-02~05 实测 1519 条），封顶的片对半重查
+NEWS_PAGE_CAP = 230     # company-news 单次最多约 250 条，新的在前（实测 TSLA 243、SPCX 242 也是被截断的）
+NEWS_MAX_PAGES = 12
 
 
 def earnings_calendar(days: int = 14) -> list[dict]:
-    """未来 N 天财报日历，按 14 天分片抓取后合并。
+    """未来 N 天财报日历，按 CAL_CHUNK_DAYS 分片抓取后合并。
 
     为什么必须分片：Finnhub 的响应在 1500 条封顶，而且**不按日期排序**——
     直接要一个宽区间会被静默截断，而且截掉的往往是近端日期。
@@ -52,20 +53,22 @@ def earnings_calendar(days: int = 14) -> list[dict]:
     today = date.today()
     seen: set[tuple] = set()
     out: list[dict] = []
-    truncated: list[str] = []
-    start = 0
-    while start < days:
-        end = min(start + CAL_CHUNK_DAYS, days)
-        d0 = today + timedelta(days=start)
-        d1 = today + timedelta(days=end)
+    problems: list[str] = []
+
+    def fetch(d0: date, d1: date) -> None:
         try:
             data = _get("calendar/earnings", **{"from": d0.isoformat(), "to": d1.isoformat()})
         except Exception:
-            start = end
-            continue
+            problems.append(f"{d0}~{d1} 取数失败")
+            return
         rows = data.get("earningsCalendar", []) or []
         if len(rows) >= CAL_ROW_CAP:
-            truncated.append(f"{d0}~{d1}")
+            if d1 > d0:
+                mid = d0 + (d1 - d0) // 2
+                fetch(d0, mid)
+                fetch(mid + timedelta(days=1), d1)
+                return
+            problems.append(f"{d0} 单日触到 {CAL_ROW_CAP} 条上限")
         for e in rows:
             key = (e.get("symbol"), e.get("date"))
             if key in seen:
@@ -77,13 +80,37 @@ def earnings_calendar(days: int = 14) -> list[dict]:
                 "hour": {"bmo": "盘前", "amc": "盘后"}.get(e.get("hour"), e.get("hour") or ""),
                 "eps_estimate": e.get("epsEstimate"),
             })
+
+    start = 0
+    while start < days:
+        end = min(start + CAL_CHUNK_DAYS, days)
+        fetch(today + timedelta(days=start), today + timedelta(days=end))
         start = end
-    if truncated:
-        # 不静默：分片还封顶说明该缩小 CAL_CHUNK_DAYS，否则又在丢数据
-        print(f"⚠ 财报日历分片仍触到 {CAL_ROW_CAP} 条上限: {', '.join(truncated)}"
-              f"——请调小 CAL_CHUNK_DAYS", file=_sys.stderr)
+    if problems:
+        # 不静默：这些日期的财报在报告里看不到 📅
+        print(f"⚠ 财报日历不全: {', '.join(problems)}", file=_sys.stderr)
     out.sort(key=lambda x: x["date"] or "")
     return out
+
+
+def next_earnings(symbol: str, days: int = 45) -> str | None:
+    """按代码查这只票的下一次财报日。批量日历只认主上市代码（Alphabet 是 GOOGL，台积电是 2330.TW），
+    按代码查时返回的 symbol 也是主上市代码，所以这里只取日期，由调用方记到自己的代码名下。"""
+    today = date.today()
+    data = _get("calendar/earnings", symbol=symbol.replace("-", "."),
+                **{"from": today.isoformat(), "to": (today + timedelta(days=days)).isoformat()})
+    dates = sorted(e["date"] for e in data.get("earningsCalendar") or [] if e.get("date"))
+    return dates[0] if dates else None
+
+
+def _news_item(it: dict) -> dict:
+    return {
+        "title": it.get("headline", ""),
+        "summary": it.get("summary", ""),
+        "url": it.get("url", ""),
+        "source": it.get("source", ""),
+        "time": str(it.get("datetime", "")),
+    }
 
 
 def company_news(symbol: str, days: int = 7, limit: int = 8) -> list[dict]:
@@ -93,16 +120,42 @@ def company_news(symbol: str, days: int = 7, limit: int = 8) -> list[dict]:
         symbol=symbol.replace("-", "."),     # Finnhub 用 BRK.B，我们用 BRK-B
         **{"from": (today - timedelta(days=days)).isoformat(), "to": today.isoformat()},
     )
-    out = []
-    for it in items[:limit]:
-        out.append({
-            "title": it.get("headline", ""),
-            "summary": it.get("summary", ""),
-            "url": it.get("url", ""),
-            "source": it.get("source", ""),
-            "time": str(it.get("datetime", "")),
-        })
-    return out
+    return [_news_item(it) for it in items[:limit]]
+
+
+def company_news_all(symbol: str, days: int = 10) -> tuple[list[dict], float | None]:
+    """这段时间的全部标题。返回 (新闻, 没覆盖全时实际覆盖的天数；覆盖全了是 None)。
+
+    单次最多约 250 条：财报季 NVDA 只够 1.4 天、MRVL 6.5 天，所以条数接近上限时往回翻页。
+    """
+    now = datetime.now(timezone.utc)
+    start = now.date() - timedelta(days=days)
+    to = now.date()
+    seen: set[str] = set()
+    out: list[dict] = []
+    earliest = now.timestamp()
+    gap = False
+    for _ in range(NEWS_MAX_PAGES):
+        page = _get("company-news", symbol=symbol.replace("-", "."), **{"from": start.isoformat(), "to": to.isoformat()})
+        for it in page:
+            key = str(it.get("id") or it.get("url") or it.get("headline"))
+            if key not in seen:
+                seen.add(key)
+                out.append(_news_item(it))
+        stamps = [it["datetime"] for it in page if it.get("datetime")]
+        earliest = min([earliest, *stamps])
+        if len(page) < NEWS_PAGE_CAP or not stamps:
+            break
+        first_day = datetime.fromtimestamp(min(stamps), timezone.utc).date()
+        if first_day <= start:
+            break
+        if first_day >= to:      # 一天就超过上限，这一天取不全，只能跳到前一天
+            first_day = to - timedelta(days=1)
+            gap = True
+        to = first_day
+    else:
+        gap = True
+    return out, (round((now.timestamp() - earliest) / 86400, 1) if gap else None)
 
 
 def general_news(limit: int = 10) -> list[dict]:

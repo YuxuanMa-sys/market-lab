@@ -39,35 +39,72 @@ def test_crash_today_is_flagged_against_yesterdays_close(monkeypatch):
     assert a["tier"] in ("低位", "深度低位") and a["chg_pct"] == -30.0 and a["held"] is False
 
 
-def test_already_low_an_hour_ago_is_not_repeated(monkeypatch):
-    df = _df()
+def _crash(monkeypatch, df, bars):
     now = 2_000_000_000
     monkeypatch.setattr(alerts.time, "time", lambda: now)
     monkeypatch.setattr(data, "get_daily", lambda t, period="2y": df)
     monkeypatch.setattr(data, "get_intraday", lambda t: {"last": 70.0, "prev_close": 100.0, "chg_pct": -30.0,
-                                                         "bars": [(now - 4000, 71.0), (now - 100, 70.0)]})
-    assert alerts._check_one({"symbol": "VST"}, held=set()) is None    # 一小时前就在低位，这次不推
+                                                         "bars": [(now + dt, c) for dt, c in bars]})
 
 
-def test_reentry_later_the_same_day_is_not_repeated(monkeypatch):
-    """两小时前跌进低位、一小时前弹回去、现在又跌进去：今天已经提醒过了，不再推。"""
-    df = _df()
-    now = 2_000_000_000
-    monkeypatch.setattr(alerts.time, "time", lambda: now)
+def test_already_pushed_today_is_not_repeated(monkeypatch):
+    _crash(monkeypatch, _df(), [(-3700, 99.0), (-100, 70.0)])
+    a = alerts._check_one({"symbol": "VST"}, held=set(), sent={})
+    assert a is not None
+    assert alerts._check_one({"symbol": "VST"}, held=set(), sent={"VST": a["tier"]}) is None    # 这一档今天推过了
+    assert alerts._check_one({"symbol": "VST"}, held=set(), sent={"VST": "深度低位"}) is None
+
+
+def test_tier_upgrade_is_pushed_again(monkeypatch):
+    _crash(monkeypatch, _df(), [(-3700, 99.0), (-100, 70.0)])
+    monkeypatch.setattr(alerts, "_tier", lambda v: "深度低位" if v >= 55 else None)
+    monkeypatch.setattr(alerts, "_live_dip_estimate", lambda *a, **k: 75)
+    monkeypatch.setattr(alerts, "dip_score", lambda *a, **k: {"score": 10})
+    assert alerts._check_one({"symbol": "VST"}, held=set(), sent={"VST": "低位"})["tier"] == "深度低位"
+
+
+def test_earlier_dip_that_was_never_pushed_still_alerts(monkeypatch):
+    """回归：上一小时分钟线已经跌到过这个价，但当时没推，这次必须推（2026-11-04 FIS、IREN 就这样全天没提醒）。"""
+    _crash(monkeypatch, _df(), [(-7400, 70.0), (-3700, 72.0), (-100, 70.0)])
+    assert alerts._check_one({"symbol": "FIS"}, held=set(), sent={}) is not None
+
+
+def test_same_tier_at_yesterdays_close_is_not_new(monkeypatch):
+    _crash(monkeypatch, _df(), [(-3700, 99.0), (-100, 70.0)])
+    monkeypatch.setattr(alerts, "_tier", lambda v: "低位")
+    monkeypatch.setattr(alerts, "_live_dip_estimate", lambda *a, **k: 60)
+    monkeypatch.setattr(alerts, "dip_score", lambda *a, **k: {"score": 60})
+    assert alerts._check_one({"symbol": "VST"}, held=set(), sent={}) is None
+
+
+def test_todays_bar_is_cut_after_close(monkeypatch):
+    """回归：美东 16:20 之后日线带上今天，"昨收"会变成今天的收盘，今天被算两遍。"""
+    df = _df(end="2026-11-04")
+    today = pd.Timestamp("2026-11-04 15:30").to_pydatetime()
+    monkeypatch.setattr(data, "_now_ct", lambda: today)
+    seen = []
+    def fake(d, last, sup, tol, hi=None, lo=None):
+        seen.append(d.index[-1])
+        return 0.0
+    monkeypatch.setattr(alerts, "_live_dip_estimate", fake)
     monkeypatch.setattr(data, "get_daily", lambda t, period="2y": df)
-    monkeypatch.setattr(data, "get_intraday", lambda t: {"last": 70.0, "prev_close": 100.0, "chg_pct": -30.0,
-                                                         "bars": [(now - 7400, 70.0), (now - 3700, 99.0), (now - 100, 70.0)]})
-    assert alerts._check_one({"symbol": "VST"}, held=set()) is None
+    monkeypatch.setattr(data, "get_intraday", lambda t: {"last": 100.0, "prev_close": 100.0, "chg_pct": 0.0, "bars": []})
+    assert alerts._check_one({"symbol": "KO"}, held=set()) is None
+    assert seen == [pd.Timestamp("2026-11-03")]
 
 
-def test_first_entry_after_open_is_flagged(monkeypatch):
+def test_synthetic_bar_uses_todays_high_low(monkeypatch):
+    """回归：合成K线的高低点曾经取昨天的，ATR 算错，估分能差 10 分、跨过 55 线（CIEN 11/02 估 53，收盘 60）。"""
     df = _df()
-    now = 2_000_000_000
-    monkeypatch.setattr(alerts.time, "time", lambda: now)
-    monkeypatch.setattr(data, "get_daily", lambda t, period="2y": df)
-    monkeypatch.setattr(data, "get_intraday", lambda t: {"last": 70.0, "prev_close": 100.0, "chg_pct": -30.0,
-                                                         "bars": [(now - 7400, 99.0), (now - 3700, 98.0), (now - 100, 70.0)]})
-    assert alerts._check_one({"symbol": "VST"}, held=set()) is not None
+    seen = {}
+    def fake(d, sup, tol):
+        seen.update(high=float(d["High"].iloc[-1]), low=float(d["Low"].iloc[-1]), close=float(d["Close"].iloc[-1]))
+        return {"score": 1}
+    monkeypatch.setattr(alerts, "dip_score", fake)
+    alerts._live_dip_estimate(df, 90.0, [], 0, 95.0, 88.0)
+    assert seen == {"high": 95.0, "low": 88.0, "close": 90.0}
+    alerts._live_dip_estimate(df, 90.0, [], 0)                  # 取不到今天的高低点：用现价，不用昨天的
+    assert seen == {"high": 90.0, "low": 90.0, "close": 90.0}
 
 
 def test_rising_price_is_not_a_new_entry(monkeypatch):
@@ -79,9 +116,23 @@ def test_rising_price_is_not_a_new_entry(monkeypatch):
     monkeypatch.setattr(data, "get_intraday", lambda t: {"last": 70.0, "prev_close": 100.0, "chg_pct": -30.0,
                                                          "bars": [(now - 3700, 69.0), (now - 100, 70.0)]})
     monkeypatch.setattr(alerts, "_tier", lambda v: "低位" if v == 99 else None)     # 一小时前不在低位，现在在
-    monkeypatch.setattr(alerts, "_live_dip_estimate", lambda d, p, sup, tol: 99 if p == 70.0 else 10)
+    monkeypatch.setattr(alerts, "_live_dip_estimate", lambda d, p, sup, tol, hi=None, lo=None: 99 if p == 70.0 else 10)
     monkeypatch.setattr(alerts, "dip_score", lambda *a, **k: {"score": 10})
     assert alerts._check_one({"symbol": "GOOG"}, held=set()) is None
+
+
+def test_up_on_the_day_is_not_a_new_entry(monkeypatch):
+    """当天还在涨的票，从高点回落也不算跌进低位（回放 10/26：FN +5.8%、CRWV +4.6% 都曾被推成新进入低位）。"""
+    df = _df()
+    now = 2_000_000_000
+    monkeypatch.setattr(alerts.time, "time", lambda: now)
+    monkeypatch.setattr(data, "get_daily", lambda t, period="2y": df)
+    monkeypatch.setattr(data, "get_intraday", lambda t: {"last": 105.0, "prev_close": 100.0, "chg_pct": 5.0,
+                                                         "bars": [(now - 3700, 108.0), (now - 100, 105.0)]})
+    monkeypatch.setattr(alerts, "_tier", lambda v: "低位" if v == 99 else None)
+    monkeypatch.setattr(alerts, "_live_dip_estimate", lambda *a, **k: 99)
+    monkeypatch.setattr(alerts, "dip_score", lambda *a, **k: {"score": 10})
+    assert alerts._check_one({"symbol": "FN"}, held=set()) is None
 
 
 def test_quiet_stock_skips_zone_work(monkeypatch):
@@ -94,21 +145,85 @@ def test_quiet_stock_skips_zone_work(monkeypatch):
     assert alerts._check_one({"symbol": "KO"}, held=set()) is None
 
 
+def _no_state(monkeypatch, sent=None):
+    monkeypatch.setattr(alerts, "_market_open_today", lambda: True)
+    monkeypatch.setattr(alerts.alertstate, "load_sent", lambda day: {} if sent is None else sent)
+
+
 def test_scan_reports_failures_instead_of_hiding_them(monkeypatch):
+    _no_state(monkeypatch)
     monkeypatch.setattr(data, "get_daily", lambda t, period="2y": (_ for _ in ()).throw(ValueError("x")))
     monkeypatch.setattr("market_lab.report.load_holdings", lambda: ["AAA"])
     res = alerts.scan([{"symbol": "BBB"}])
     assert res["alerts"] == [] and res["n_ok"] == 0 and sorted(res["failed"]) == ["AAA", "BBB"]
+    assert res["sent_ok"] is True and res["market_closed"] is False
+
+
+def test_scan_passes_sent_and_flags_unreadable_state(monkeypatch):
+    _crash(monkeypatch, _df(), [(-3700, 99.0), (-100, 70.0)])
+    monkeypatch.setattr(alerts, "_market_open_today", lambda: True)
+    monkeypatch.setattr("market_lab.report.load_holdings", lambda: [])
+    monkeypatch.setattr(alerts.alertstate, "load_sent", lambda day: {"VST": "深度低位"})
+    assert alerts.scan([{"symbol": "VST"}])["alerts"] == []
+    # 读不到记录：宁可重复也不漏，并且标出来
+    monkeypatch.setattr(alerts.alertstate, "load_sent", lambda day: None)
+    res = alerts.scan([{"symbol": "VST"}])
+    assert [a["ticker"] for a in res["alerts"]] == ["VST"] and res["sent_ok"] is False
+
+
+def test_market_closed_day_is_skipped(monkeypatch):
+    now = pd.Timestamp("2026-11-26 11:00", tz="America/Chicago").to_pydatetime()
+    monkeypatch.setattr(data, "_now_ct", lambda: now)
+    wed = int(pd.Timestamp("2026-11-25 14:55", tz="America/Chicago").timestamp())
+    monkeypatch.setattr(data, "get_intraday", lambda t: {"last": 1.0, "bars": [(wed, 1.0)]})
+    res = alerts.scan([{"symbol": "VST"}])
+    assert res["market_closed"] is True and res["alerts"] == [] and res["failed"] == []
+    today = int(pd.Timestamp("2026-11-26 10:55", tz="America/Chicago").timestamp())
+    monkeypatch.setattr(data, "get_intraday", lambda t: {"last": 1.0, "bars": [(today, 1.0)]})
+    assert alerts._market_open_today() is True
+    monkeypatch.setattr(data, "get_intraday", lambda t: {})         # 取不到不算休市：照常检查，失败会报出来
+    assert alerts._market_open_today() is True
+
+
+def _alerts(n, sector="存储", ticker="T"):
+    return [{"ticker": f"{ticker}{i}", "held": i == 0, "sector": sector, "tier": "低位", "dip_est": 60.0 - i % 5,
+             "chg_pct": -5.25, "last": 12.5} for i in range(n)]
 
 
 def test_push_text_format():
-    a = [{"ticker": f"T{i}", "held": i == 0, "sector": "存储", "tier": "低位", "dip_est": 60.0 - i, "chg_pct": -5.25, "last": 12.5}
-         for i in range(40)]
-    assert alerts.push_text([]) == ""
-    text = alerts.push_text(a)
+    assert alerts.push_text([]) == ("", [])
+    text, shown = alerts.push_text(_alerts(40))
     lines = text.split("\n")
     assert lines[0].startswith("📉盘中新进入低位") and lines[1] == "T0★[存储] 低位60 -5.2% 现价12.5"
-    assert lines[5].startswith("另有 T4[存储]56") and lines[5].endswith("只") and len(text) <= alerts.PUSH_MAX
+    assert lines[5].startswith("另有 T4[存储]") and lines[5].endswith("只") and len(text) <= 200
+    # 只有写出名字的票才算推过；+N只 下一小时接着推
+    assert shown[:5] == ["T0", "T1", "T2", "T3", "T4"] and all(t in text for t in shown)
+    assert lines[5].endswith(f"+{40 - len(shown)}只")
+
+
+def test_push_text_never_exceeds_budget():
+    long_row = {"ticker": "BRK-B", "held": True, "sector": "计算芯片", "tier": "深度低位", "dip_est": 100.0,
+                "chg_pct": -29.75, "last": 1739.88}
+    for n in (1, 2, 3, 4, 5, 6, 8, 12, 40, 400):
+        for warn in ((0, 231, True), (30, 231, True), (30, 231, False), (0, 231, False)):
+            text, shown = alerts.push_text([dict(long_row) for _ in range(n)], *warn)
+            assert len(text) <= alerts.PUSH_MAX, (n, warn, len(text))
+            assert shown
+            assert (n == len(shown)) == ("只" not in text.split("\n")[-1])
+
+
+def test_mass_failure_is_pushed_even_without_alerts():
+    """回归：Yahoo 全部失败时输出是空的，模型回复"无新进入低位"，用户分不清是没票还是没查成。"""
+    text, shown = alerts.push_text([], 231, 231)
+    assert "231/231" in text and "⚠" in text and shown == []
+    assert alerts.push_text([], 20, 231) == ("", [])            # 个别失败只写 stderr
+    text, _ = alerts.push_text(_alerts(3), 21, 231)
+    assert text.startswith("⚠盘中检查21/231") and "T0" in text
+
+
+def test_state_warning_is_shown_only_with_alerts():
+    assert alerts.push_text([], 0, 231, sent_ok=False) == ("", [])
+    assert alerts.push_text(_alerts(1), 0, 231, sent_ok=False)[0].startswith("⚠读不到")
 
 
 def test_polygon_free_tier_is_not_used(monkeypatch):
@@ -124,11 +239,13 @@ def test_polygon_free_tier_is_not_used(monkeypatch):
 
 
 def test_intraday_prev_close_is_yesterday(monkeypatch):
-    payload = {"meta": {"regularMarketPrice": 120.0, "chartPreviousClose": 140.0, "instrumentType": "EQUITY"},
+    payload = {"meta": {"regularMarketPrice": 120.0, "chartPreviousClose": 140.0, "instrumentType": "EQUITY",
+                        "regularMarketDayHigh": 128.0, "regularMarketDayLow": 117.0},
                "timestamp": [1, 2, 3], "indicators": {"quote": [{"close": [121.0, None, 120.0]}]}}
     monkeypatch.setattr(data, "_yahoo_get", lambda t, p: payload)
     q = data.get_intraday("VST")
     assert round(q["chg_pct"], 2) == -14.29 and q["bars"] == [(1, 121.0), (3, 120.0)]
+    assert q["day_high"] == 128.0 and q["day_low"] == 117.0
 
 
 def test_instrument_type_mapping(monkeypatch):

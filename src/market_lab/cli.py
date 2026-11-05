@@ -30,7 +30,8 @@ def main() -> None:
     sub.add_parser("exitbt", help="出场策略锦标赛：同一信号集上对比9种止盈/止损策略")
 
     p_al = sub.add_parser("alerts", help="盘中检查：谁这一小时新跌进低位(供定时任务调用)")
-    p_al.add_argument("--push", action="store_true", help="只输出推送原文；没有新进入低位的票就什么都不输出")
+    p_al.add_argument("--push", action="store_true", help="只输出推送原文；没什么可说时什么都不输出")
+    p_al.add_argument("--mark-sent", action="store_true", help="推送成功之后跑：把刚才写出名字的票记成今天已推过")
 
     p_ad = sub.add_parser("advise", help="单票模式化买卖建议(结合大盘状态和持仓)")
     p_ad.add_argument("ticker")
@@ -136,13 +137,18 @@ def main() -> None:
         json.dump(events_scan(tickers, days=args.days), sys.stdout, ensure_ascii=False, indent=1)
         print()
     elif args.cmd == "alerts":
+        from . import alertstate
         from .alerts import push_text, scan
         from .report import load_watchlist
+        if args.mark_sent:
+            print(f"已记录 {alertstate.commit_pending()} 只")
+            return
         res = scan(load_watchlist())
         if res["failed"]:
             print(f"取数失败 {len(res['failed'])} 只: {' '.join(res['failed'])}", file=sys.stderr)
         if args.push:
-            text = push_text(res["alerts"])
+            text, shown = push_text(res["alerts"], len(res["failed"]), res["n_ok"] + len(res["failed"]), res["sent_ok"])
+            alertstate.write_pending(res["date"], {a["ticker"]: a["tier"] for a in res["alerts"] if a["ticker"] in shown})
             if text:
                 print(text)
         else:

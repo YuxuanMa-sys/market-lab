@@ -3,6 +3,7 @@
 #   sector    细分板块，必须是 sectors.yaml 里列出的名字。
 #   note      一句话说明是什么公司，只写事实。
 #   earnings  财报日 YYYY-MM-DD（可选）。只在财报日历查不到时才填；人工值会覆盖日历值，填错会压掉正确日期。
+#   earnings_lookup  true（可选）。外国公司、双重上市、多股份类别的票要加：批量财报日历只认主上市代码，这些票要单独按代码查。
 #
 # 持仓不在这里维护，只看 holdings.txt。
 #
@@ -22,14 +23,14 @@ tickers:
   - {symbol: SNDK, sector: 存储, note: "闪迪"}
   - {symbol: WDC, sector: 存储, note: "西部数据"}
   - {symbol: STX, sector: 存储, note: "希捷"}
-  - {symbol: SKHY, sector: 存储, note: "SK海力士ADR"}
+  - {symbol: SKHY, sector: 存储, note: "SK海力士ADR", earnings_lookup: true}
   - {symbol: AMAT, sector: 设备, note: "应用材料"}
   - {symbol: LRCX, sector: 设备, note: "泛林"}
   - {symbol: KLAC, sector: 设备, note: "科磊"}
-  - {symbol: ASML, sector: 设备, note: "阿斯麦"}
+  - {symbol: ASML, sector: 设备, note: "阿斯麦", earnings_lookup: true}
   - {symbol: TER, sector: 设备, note: "泰瑞达"}
   - {symbol: FORM, sector: 设备, note: "FormFactor 探针卡"}
-  - {symbol: TSM, sector: 代工封测, note: "台积电"}
+  - {symbol: TSM, sector: 代工封测, note: "台积电", earnings_lookup: true}
   - {symbol: INTC, sector: 代工封测, note: "英特尔"}
   - {symbol: AMKR, sector: 代工封测, note: "安靠"}
   - {symbol: GFS, sector: 代工封测, note: "格芯"}
@@ -53,7 +54,7 @@ tickers:
   - {symbol: DELL, sector: 服务器, note: "戴尔"}
   - {symbol: SMCI, sector: 服务器, note: "超微电脑"}
   - {symbol: HPE, sector: 服务器, note: "慧与"}
-  - {symbol: CLS, sector: 服务器, note: "Celestica 硬件代工"}
+  - {symbol: CLS, sector: 服务器, note: "Celestica 硬件代工", earnings_lookup: true}
   - {symbol: CRWV, sector: 算力云, note: "CoreWeave"}
   - {symbol: NBIS, sector: 算力云, note: "Nebius"}
   - {symbol: IREN, sector: 算力云, note: "IREN 矿企转算力"}
@@ -71,7 +72,7 @@ tickers:
   - {symbol: NOW, sector: 平台软件, note: "ServiceNow"}
   - {symbol: ADBE, sector: 平台软件, note: "Adobe"}
   - {symbol: INTU, sector: 平台软件, note: "Intuit"}
-  - {symbol: SAP, sector: 平台软件, note: "SAP"}
+  - {symbol: SAP, sector: 平台软件, note: "SAP", earnings_lookup: true}
   - {symbol: SNOW, sector: 数据软件, note: "Snowflake"}
   - {symbol: DDOG, sector: 数据软件, note: "Datadog"}
   - {symbol: MDB, sector: 数据软件, note: "MongoDB"}
@@ -90,7 +91,7 @@ tickers:
   # ======== 互联网 ========
   - {symbol: AAPL, sector: 巨头, note: "苹果"}
   - {symbol: MSFT, sector: 巨头, note: "微软"}
-  - {symbol: GOOG, sector: 巨头, note: "谷歌C类"}
+  - {symbol: GOOG, sector: 巨头, note: "谷歌C类", earnings_lookup: true}
   - {symbol: META, sector: 巨头, note: "Meta"}
   - {symbol: AMZN, sector: 巨头, note: "亚马逊"}
   - {symbol: APP, sector: 广告社交, note: "AppLovin"}
@@ -129,6 +130,7 @@ tickers:
   - {symbol: COST, sector: 大众零售, note: "好市多"}
   - {symbol: TGT, sector: 大众零售, note: "塔吉特"}
   - {symbol: TJX, sector: 大众零售, note: "TJX 折扣零售"}
+  - {symbol: PEP, sector: 日用食品, note: "百事 饮料和零食"}
   - {symbol: KO, sector: 日用食品, note: "可口可乐"}
   - {symbol: PG, sector: 日用食品, note: "宝洁"}
   - {symbol: PM, sector: 日用食品, note: "菲莫国际"}
@@ -154,7 +156,7 @@ tickers:
   - {symbol: BX, sector: 资管, note: "黑石"}
   - {symbol: KKR, sector: 资管, note: "KKR"}
   - {symbol: APO, sector: 资管, note: "阿波罗"}
-  - {symbol: BRK-B, sector: 保险, note: "伯克希尔"}
+  - {symbol: BRK-B, sector: 保险, note: "伯克希尔", earnings_lookup: true}
   - {symbol: PGR, sector: 保险, note: "Progressive"}
   - {symbol: TRV, sector: 保险, note: "Travelers"}
   # ======== 加密 ========
@@ -169,7 +171,7 @@ tickers:
   - {symbol: MRK, sector: 大药, note: "默沙东"}
   - {symbol: ABBV, sector: 大药, note: "艾伯维"}
   - {symbol: PFE, sector: 大药, note: "辉瑞"}
-  - {symbol: NVO, sector: 大药, note: "诺和诺德"}
+  - {symbol: NVO, sector: 大药, note: "诺和诺德", earnings_lookup: true}
   - {symbol: VRTX, sector: 生物科技, note: "福泰"}
   - {symbol: REGN, sector: 生物科技, note: "再生元"}
   - {symbol: MRNA, sector: 生物科技, note: "Moderna"}
@@ -227,8 +229,8 @@ tickers:
   - {symbol: DUK, sector: 公用事业, note: "Duke"}
   # ======== 材料 ========
   - {symbol: NEM, sector: 贵金属, note: "纽蒙特"}
-  - {symbol: AEM, sector: 贵金属, note: "Agnico Eagle"}
-  - {symbol: B, sector: 贵金属, note: "Barrick"}
+  - {symbol: AEM, sector: 贵金属, note: "Agnico Eagle", earnings_lookup: true}
+  - {symbol: B, sector: 贵金属, note: "Barrick", earnings_lookup: true}
   - {symbol: HL, sector: 贵金属, note: "Hecla 白银"}
   - {symbol: FCX, sector: 工业金属, note: "自由港"}
   - {symbol: NUE, sector: 工业金属, note: "纽柯钢铁"}

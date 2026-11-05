@@ -69,7 +69,7 @@ def _yahoo_direct_daily(ticker: str, period: str = "2y") -> pd.DataFrame:
 
 
 def get_intraday(ticker: str) -> dict:
-    """现价 + 昨收 + 当天 5 分钟线（Yahoo，一个请求拿全）。失败返回空 dict。
+    """现价 + 昨收 + 今天的高低点 + 当天 5 分钟线（Yahoo，一个请求拿全）。失败返回空 dict。
 
     昨收必须用 range=1d 的 chartPreviousClose：它指"图表起点之前的收盘"，
     旧代码用 7 天窗口取，算出来的"今日涨跌"其实是一周涨跌。
@@ -86,6 +86,7 @@ def get_intraday(ticker: str) -> dict:
     closes = (((j.get("indicators") or {}).get("quote") or [{}])[0].get("close")) or []
     bars = [(int(t), float(c)) for t, c in zip(j.get("timestamp") or [], closes) if c is not None]
     return {"last": float(last), "prev_close": float(prev), "chg_pct": (float(last) / float(prev) - 1) * 100,
+            "day_high": m.get("regularMarketDayHigh"), "day_low": m.get("regularMarketDayLow"),
             "bars": bars, "type": m.get("instrumentType")}
 
 
@@ -408,3 +409,14 @@ def get_earnings_calendar(days: int = 14) -> list[dict]:
         return finnhub.earnings_calendar(days)
     except Exception:
         return []
+
+
+def get_next_earnings(ticker: str, days: int = 45) -> str | None:
+    """按代码单独查下一次财报日。批量日历查不到的票用（见 watchlist.yaml 的 earnings_lookup）。"""
+    if not os.environ.get("FINNHUB_API_KEY"):
+        return None
+    try:
+        from .providers import finnhub
+        return finnhub.next_earnings(ticker, days)
+    except Exception:
+        return None

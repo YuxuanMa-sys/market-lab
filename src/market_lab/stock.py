@@ -231,6 +231,7 @@ def analyze(ticker: str, with_news: bool = True, with_short: bool = True) -> dic
 
     out = {
         "ticker": ticker,
+        "as_of": df.index[-1].date().isoformat(),       # 日线只含已收盘的K线：盘中跑这里是上一交易日的数
         "price": round(price, 2),
         "trail_stop": trail_stop,
         "below_ma50_streak": int(below_streak),

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+from market_lab import data, hygiene
 from market_lab.hygiene import find_splices, window_stats
 
 
@@ -40,3 +41,19 @@ def test_price_and_liquidity_floors():
     fails = window_stats(df, cal)["fails"]
     assert any(f.startswith("2 ") for f in fails) and any(f.startswith("3 20日均成交额") for f in fails)
     assert np.isclose(window_stats(df, cal[:-5])["price"], 4.0)
+
+
+def test_unknown_type_blocks_new_entry_but_does_not_remove(monkeypatch):
+    """回归：类型查询被限流时 fails_new 是空的，ETF 能混进观察池（SOXX 就这样进来过）。"""
+    cal = pd.bdate_range("2024-09-01", periods=520)
+    df = _df(cal, [500.0] * len(cal), [1e7] * len(cal))
+    df["High"] = 505.0                                # ATR 要大于 0
+    monkeypatch.setattr(data, "get_daily", lambda t, period="2y": df)
+    monkeypatch.setattr(data, "get_instrument_type", lambda t: None)
+    r = hygiene._check_one({"symbol": "SMH"}, set(), cal)
+    assert r["fails_new"] == ["1 类型未知（没查成）"] and r["remove_eligible"] is False
+    monkeypatch.setattr(data, "get_instrument_type", lambda t: "ETF")
+    r = hygiene._check_one({"symbol": "SMH"}, set(), cal)
+    assert r["fails_new"] == ["1 类型 ETF 不是个股"] and r["remove_eligible"] is True
+    monkeypatch.setattr(data, "get_instrument_type", lambda t: "CS")
+    assert hygiene._check_one({"symbol": "NVDA"}, set(), cal)["fails_new"] == []

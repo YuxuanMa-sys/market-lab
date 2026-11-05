@@ -10,6 +10,8 @@ PUSH_MAX = 200          # PushNotification 说明：超过 200 字手机上会�
 WHY_TICKERS = {"postmarket": 10, "premarket": 6}
 WHY_SECTORS = 4
 DETAIL_LOW_MAX = 25     # 低位票超过这么多只时，55-69 分的只按细分合并列出
+SECTOR_MIN = 50         # 持仓再多也给板块行和低位清单留出这么多字
+LOW_MIN = 60
 
 
 def _s(x, nd=1):
@@ -26,7 +28,15 @@ def _tag(sector):
     return f"[{sector}]" if sector else ""
 
 
-def holdings_part(high_list: list[dict]) -> str:
+def day_label(session: str, stale: bool = False) -> str:
+    """涨跌幅叫什么。盘前看到的是昨天收盘；盘后正常是今天，休市日最新K线还是上一个交易日。"""
+    if session != "postmarket":
+        return "昨日"
+    return "上一交易日" if stale else "今日"
+
+
+def holdings_part(high_list: list[dict], budget: int = PUSH_MAX) -> str:
+    """每只持仓一小段。放不下时先留取数失败和分数高的（最需要看一眼），其余写 +N只，全部清单在简报里。"""
     bits = []
     for r in high_list:
         if r.get("score") is None:
@@ -35,7 +45,20 @@ def holdings_part(high_list: list[dict]) -> str:
         tier = (r.get("tier") or "").replace("接近高位", "接近")
         bits.append(f"{r['ticker']} {r['score']}{tier}{'🆕' if r.get('new_entry') else ''}"
                     f"{'⚠翻倍' if r.get('extreme_runup') else ''}")
-    return "📈持仓: " + " ".join(bits) if bits else ""
+    if not bits:
+        return ""
+    head = "📈持仓: "
+    if len(head) + len(" ".join(bits)) <= budget:
+        return head + " ".join(bits)
+    order = sorted(zip(high_list, bits), key=lambda x: (x[0].get("score") is not None, -(x[0].get("score") or 0)))
+    kept: list[str] = []
+    used = len(head)
+    for _, bit in order:
+        if used + len(bit) + 1 > budget - 6:                                 # 给 " +NN只" 留位置
+            break
+        kept.append(bit)
+        used += len(bit) + 1
+    return head + " ".join(kept) + f" +{len(bits) - len(kept)}只"
 
 
 def low_part(low_list: list[dict], label: str, budget: int) -> str:
@@ -63,13 +86,13 @@ def low_part(low_list: list[dict], label: str, budget: int) -> str:
     return head + body + (f" +{rest}只" if rest else "")
 
 
-def push_sectors(summary: dict, budget: int = PUSH_MAX) -> str:
+def push_sectors(summary: dict, budget: int = PUSH_MAX, label: str = "收盘") -> str:
     """各大板块今天的等权涨跌，从强到弱。放不下时留两头、省掉中间。"""
     groups = summary.get("groups") or []
     if not groups:
         return ""
     spy = summary.get("spy_chg")
-    head = f"📊板块收盘(SPY{_pct(spy)}): " if spy is not None else "📊板块收盘: "
+    head = f"📊板块{label}(SPY{_pct(spy)}): " if spy is not None else f"📊板块{label}: "
     bits = [f"{g['group']}{_s(g['avg'])}" for g in groups]
     text = head + " ".join(bits)
     keep = len(bits)
@@ -81,17 +104,27 @@ def push_sectors(summary: dict, budget: int = PUSH_MAX) -> str:
 
 
 def pushes(session: str, high_list: list[dict], low_list: list[dict], summary: dict | None,
-           vix_note: str = "") -> list[str]:
-    """要发的推送原文。收盘两条：持仓+板块、低位清单。盘前一条：持仓+低位（名单和昨晚基本一样）。"""
-    hold = holdings_part(high_list)
+           vix_note: str = "", n_ok: int | None = None, n_failed: int = 0, stale_as_of: str | None = None) -> list[str]:
+    """要发的推送原文。收盘两条：持仓+板块、低位清单。盘前一条：持仓+低位（名单和昨晚基本一样）。
+
+    有票取数失败时开头写明，手机上截断也看得到：清单少了票不等于这些票不在低位。一只都没取到时不能说"没有低位票"。
+    stale_as_of：盘后跑但今天没有新K线（休市日），标上数据是哪天的。
+    """
+    post = session == "postmarket"
+    if n_failed and not n_ok:
+        return [f"⚠{'盘后' if post else '盘前'}报告失败：观察池 {n_failed} 只全部取数失败，今天没有清单"]
+    warn = f"⚠{n_failed}只取数失败，结果不全\n" if n_failed else ""
     tail = f"\n{vix_note}" if vix_note else ""
-    if session == "postmarket":
-        first = "\n".join(x for x in (hold, push_sectors(summary or {}, PUSH_MAX - len(hold) - 1)) if x)
-        second = low_part(low_list, "收盘低位", PUSH_MAX - len(tail)) + tail
-        return [x for x in (first, second) if x]
-    budget = PUSH_MAX - len(hold) - len(tail) - (1 if hold else 0)
-    low = low_part(low_list, "低位", max(budget, 60))
-    return ["\n".join(x for x in (hold, low) if x) + tail]
+    if post:
+        label = f"{stale_as_of[5:]}收盘" if stale_as_of else "收盘"
+        hold = holdings_part(high_list, PUSH_MAX - len(warn) - SECTOR_MIN)
+        sectors = push_sectors(summary or {}, PUSH_MAX - len(warn) - len(hold) - 1, label)
+        first = "\n".join(x for x in (hold, sectors) if x)
+        second = low_part(low_list, f"{label}低位", PUSH_MAX - len(warn) - len(tail)) + tail
+        return [warn + x for x in (first, second) if x]
+    hold = holdings_part(high_list, PUSH_MAX - len(warn) - len(tail) - LOW_MIN)
+    low = low_part(low_list, "低位", PUSH_MAX - len(warn) - len(tail) - (len(hold) + 1 if hold else 0))
+    return [warn + "\n".join(x for x in (hold, low) if x) + tail]
 
 
 def sector_lines(summary: dict, why_sectors: set[str]) -> list[str]:
@@ -140,10 +173,17 @@ def pick_why(session: str, high_list: list[dict], low_list: list[dict], summary:
 
 
 def brief_md(session: str, high_list: list[dict], high_ctx: dict, low_list: list[dict], low_ctx: dict,
-             summary: dict | None, why: dict, why_news: dict | None = None) -> str:
+             summary: dict | None, why: dict, why_news: dict | None = None,
+             as_of: str | None = None, stale: bool = False, failed: list[str] | None = None) -> str:
     post = session == "postmarket"
-    day = "今日" if post else "昨日"
+    day = day_label(session, stale)
     out: list[str] = []
+
+    if as_of:
+        out.append(f"数据日期：{as_of} 收盘" + ("（今天没有新K线）" if stale else ""))
+    if failed:
+        names = " ".join(failed[:30]) + (" …" if len(failed) > 30 else "")
+        out.append(f"⚠ 观察池 {len(failed)} 只取数失败，下面的清单和板块数字不全：{names}")
 
     # ---- 持仓高位 ----
     out.append("【持仓高位】")
@@ -159,7 +199,7 @@ def brief_md(session: str, high_list: list[dict], high_ctx: dict, low_list: list
         if r.get("days_to_earnings") is not None and 0 <= r["days_to_earnings"] <= 7:
             flags += f"📅{r['earnings']}"
         why_txt = f" | <<为什么涨:{r['ticker']}>>" if r["ticker"] in why["up"] else ""
-        out.append(f"{r['ticker']}{_tag(r.get('sector'))} {r['tier']} {r['score']}（上一日 {r.get('prev_score')}）{flags}"
+        out.append(f"{r['ticker']}{_tag(r.get('sector'))} {r['tier']} {r['score']}（上一日 {'-' if r.get('prev_score') is None else r['prev_score']}）{flags}"
                    f" | {day}{_pct(r.get('chg_pct'))} | 20日涨幅{_pct(r.get('runup20_pct'))}"
                    f" | 距52周高{_pct(r.get('dist52h_pct'))} | {'；'.join(r.get('reasons') or [])}{why_txt}")
         out.extend(f"   · {n}" for n in r.get("notes") or [])
@@ -206,7 +246,7 @@ def brief_md(session: str, high_list: list[dict], high_ctx: dict, low_list: list
 
     # ---- 大盘 ----
     out.append("")
-    out.append("【今日大盘】" if post else "【大盘】")
+    out.append("【今日大盘】" if post and not stale else "【大盘】")
     out.append(low_ctx.get("vix_line", ""))
     out.append("<<大盘要闻>>")
 

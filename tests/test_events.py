@@ -39,3 +39,49 @@ def test_noise_is_dropped():
     # 一两个字母的代码不能乱匹配
     assert not _hit("Merger talks on hold as markets turn", "ON", "ON Semiconductor Corporation")
     assert not _hit("T-Mobile buyout rumor", "T", "AT&T Inc.")
+
+
+def test_abbreviated_names_and_aliases():
+    """回归：U.S. Bancorp 的 key 曾是 "u s"，真实标题 184 条一条都匹配不上；Yahoo 的公司名也不是标题里的常用叫法。"""
+    assert events.company_key("U.S. Bancorp") == "us bancorp"
+    assert events.company_key("D.R. Horton, Inc.") == "dr horton"
+    assert _hit("PNC to Acquire U.S. Bancorp in $90 billion deal", "USB", "U.S. Bancorp")
+    assert _hit("D.R. Horton to Be Acquired in Merger", "DHI", "D.R. Horton, Inc.")
+    assert _hit("Disney to be acquired by Apple", "DIS", "The Walt Disney Company")
+    assert _hit("Google to Spin Off Waymo", "GOOG", "Alphabet Inc.")
+    assert _hit("Citi to Be Acquired by JPMorgan", "C", "Citigroup Inc.")
+    assert _hit("Onsemi to Be Acquired by Infineon", "ON", "ON Semiconductor Corporation")
+    assert _hit("Southern Co Merger With Duke Announced", "SO", "The Southern Company")
+    # 词边界
+    assert not _hit("Citizens Financial to be acquired by PNC", "C", "Citigroup Inc.")
+    assert not _hit("Southern Copper merger talks", "SO", "The Southern Company")
+    assert not events.mentions("Amazon.com results", "USB", "us bancorp")
+
+
+def test_more_event_wordings():
+    for title in ("Block to change ticker symbol to XYZ", "Block and Square to merge in $115B deal", "Block sold to Marvell for $115B",
+                  "KKR to take Block private in $20B deal", "Block goes bankrupt after failed refinancing",
+                  "Block receives Nasdaq deficiency notice", "Trading in Block suspended by NYSE"):
+        assert _hit(title, "XYZ", "Block, Inc."), title
+    assert not _hit("Block suspended its dividend", "XYZ", "Block, Inc.")
+
+
+def _scan(monkeypatch, names, news):
+    from market_lab import data
+    from market_lab.providers import finnhub
+    monkeypatch.setenv("FINNHUB_API_KEY", "x")
+    monkeypatch.setattr(data, "get_company_name", lambda t: names.get(t))
+    monkeypatch.setattr(finnhub, "company_news_all", news)
+
+
+def test_scan_reports_unknown_names_and_partial_coverage(monkeypatch):
+    """回归：Yahoo 限流时公司名全取不到，收购类标题全部漏掉，输出却是"全部扫过、零命中"。"""
+    def news(t, days=10):
+        if t == "BAD":
+            raise RuntimeError("429")
+        return [{"title": "Marvell to buy Lumentum"}], (1.4 if t == "NVDA" else None)
+    _scan(monkeypatch, {"LITE": "Lumentum Holdings Inc.", "NVDA": "NVIDIA Corporation"}, news)
+    res = events.scan(["LITE", "NVDA", "NONAME", "BAD"])
+    assert res["hits"] == {"LITE": ["Marvell to buy Lumentum"]}
+    assert res["name_unknown"] == ["NONAME", "BAD"] and res["failed"] == ["BAD"]
+    assert res["partial"] == {"NVDA": 1.4} and res["scanned"] == 3

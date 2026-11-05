@@ -118,7 +118,8 @@ def _check_one(item: dict, holdings: set[str], cal: pd.DatetimeIndex) -> dict:
         "atr_pct": round(a / now["price"] * 100, 1) if now["price"] > 0 else None,
         "splices": spl, "valid_days": valid_days,
         "fails_now": now["fails"], "fails_prev_week": prev["fails"],
-        "fails_new": type_fails + now["fails"] + data_fails,     # 新票入池用：必须为空
+        # 新票入池用：必须为空。类型没查成不算"是个股"，但也不进 type_fails，不然一次限流就把池内票判成可剔除
+        "fails_new": type_fails + (["1 类型未知（没查成）"] if typ is None else []) + now["fails"] + data_fails,
         "data_issues": data_fails,
         # 候选票剔除：本周和上周都不满足 2 或 3，或者不是个股
         "remove_eligible": (not held) and (bool(now["fails"] and prev["fails"]) or bool(type_fails)),

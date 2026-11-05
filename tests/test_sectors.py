@@ -120,3 +120,65 @@ def test_brief_collapses_long_low_list():
     # 不给买点、止损、止盈
     for word in ("止损", "止盈", "买点", "该卖了", "容易回落"):
         assert word not in md
+
+
+def _hold(n, score=63, tier="高位", new=False, extreme=False):
+    return [{"ticker": f"H{i:02d}", "score": score, "tier": tier, "new_entry": new, "extreme_runup": extreme} for i in range(n)]
+
+
+def _summary(n=15):
+    return {"spy_chg": -1.6, "groups": [{"group": f"可选消费{i}", "avg": -3.2} for i in range(n)]}
+
+
+def test_pushes_stay_within_budget_with_many_holdings():
+    """回归：持仓段没有预算，20 只全在高位时盘前 384 字，排在后面的低位清单和 VIX 被手机截掉。"""
+    lows = [_low(f"T{i:02d}", 80 - i, sector=f"板块{i % 5}") for i in range(40)]
+    for n in (0, 1, 7, 15, 20, 60):
+        for hold in (_hold(n), _hold(n, 72, "深度高位", True, True), _hold(n, 10, None)):
+            for failed in (0, 3, 120):
+                for session in ("premarket", "postmarket"):
+                    for text in brief.pushes(session, hold, lows, _summary(), "VIX 16.6 平静", n_ok=100, n_failed=failed,
+                                             stale_as_of="2026-11-04" if failed == 3 else None):
+                        assert len(text) <= brief.PUSH_MAX, (n, failed, session, len(text), text)
+                        if failed:
+                            assert text.startswith(f"⚠{failed}只取数失败")
+                    pre = brief.pushes(session, hold, lows, _summary(), "VIX 16.6 平静", n_ok=100, n_failed=failed)
+                    if session == "premarket":
+                        assert "📉低位26只" in pre[0] and pre[0].endswith("VIX 16.6 平静")
+                    else:
+                        assert "📊板块" in pre[0] and "📉收盘低位26只" in pre[1]
+
+
+def test_holdings_part_keeps_failures_and_high_scores_first():
+    rows = _hold(30, 10, None) + [{"ticker": "FAILX", "score": None}, {"ticker": "HOTT", "score": 88, "tier": "深度高位"}]
+    text = brief.holdings_part(rows, 60)
+    assert text.startswith("📈持仓: FAILX - HOTT 88深度高位") and text.endswith("只") and len(text) <= 60
+
+
+def test_all_failed_never_says_no_low_stocks():
+    """回归：Yahoo 限流时全部失败，推送原文是"没有低位票"，一个字不改发给用户。"""
+    for session in ("premarket", "postmarket"):
+        out = brief.pushes(session, _hold(2), [], {}, "VIX 16.6 平静", n_ok=0, n_failed=231)
+        assert len(out) == 1 and "231" in out[0] and "失败" in out[0] and "没有低位票" not in out[0]
+    assert "没有低位票" in brief.pushes("postmarket", _hold(2), [], {}, "", n_ok=231, n_failed=0)[1]
+
+
+def test_stale_day_is_labelled():
+    """回归：休市日 cron 照常触发，上一交易日的涨跌写成"今日"和"板块收盘"。"""
+    assert brief.day_label("postmarket") == "今日" and brief.day_label("premarket") == "昨日"
+    assert brief.day_label("postmarket", stale=True) == "上一交易日"
+    out = brief.pushes("postmarket", _hold(1), [_low("T", 60)], _summary(2), "", n_ok=2, stale_as_of="2026-11-04")
+    assert "📊板块11-04收盘" in out[0] and "📉11-04收盘低位" in out[1]
+    why = {"up": [], "down": [], "sectors": []}
+    md = brief.brief_md("postmarket", [], {}, [_low("T", 60)], {"vix_line": ""}, None, why,
+                        as_of="2026-11-04", stale=True, failed=["AAA", "BBB"])
+    assert md.startswith("数据日期：2026-11-04 收盘（今天没有新K线）\n⚠ 观察池 2 只取数失败")
+    assert "AAA BBB" in md and "上一交易日-3.0%" in md and "今日" not in md
+    md = brief.brief_md("postmarket", [], {}, [_low("T", 60)], {"vix_line": ""}, None, why, as_of="2026-11-05")
+    assert md.startswith("数据日期：2026-11-05 收盘\n") and "今日-3.0%" in md and "【今日大盘】" in md and "失败" not in md
+
+
+def test_brief_prints_dash_when_prev_score_missing():
+    rows = [{"ticker": "SAP", "score": 53, "tier": "接近高位", "prev_score": None, "chg_pct": 4.2, "reasons": [], "notes": []}]
+    md = brief.brief_md("postmarket", rows, {}, [], {"vix_line": ""}, None, {"up": [], "down": [], "sectors": []})
+    assert "（上一日 -）" in md and "None" not in md

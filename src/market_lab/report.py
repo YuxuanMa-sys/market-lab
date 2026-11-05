@@ -103,7 +103,7 @@ tr:last-child td { border-bottom: none; }
 </div>
 <div class="card scroll">
 <table>
-<tr><th>持仓</th><th>板块</th><th>档位</th><th>高位分</th><th>昨日</th><th>现价</th><th>今日</th><th>RSI</th><th>ATR%</th><th>高于20日线</th><th>20日涨幅</th><th>距52周高</th><th>抄底分</th><th>财报</th><th>为什么高</th></tr>
+<tr><th>持仓</th><th>板块</th><th>档位</th><th>高位分</th><th>昨日</th><th>现价</th><th>{{ day }}</th><th>RSI</th><th>ATR%</th><th>高于20日线</th><th>20日涨幅</th><th>距52周高</th><th>抄底分</th><th>财报</th><th>为什么高</th></tr>
 {% for r in high_list %}
 <tr><td><b>{{ r.ticker }}</b>{% if r.new_entry %} 🆕{% endif %}{% if r.extreme_runup %} ⚠{% endif %}</td>
 <td class="muted">{{ r.sector or "-" }}</td>
@@ -129,7 +129,7 @@ tr:last-child td { border-bottom: none; }
 <h2>📊 板块总结</h2>
 <div class="card scroll">
 <table>
-<tr><th>板块</th><th>只数</th><th>今日(等权)</th><th>相对SPY</th><th>参照ETF</th><th>涨/跌</th><th>5日</th><th>20日</th><th>低位</th><th>高位</th><th>领涨</th><th>领跌</th><th>细分</th></tr>
+<tr><th>板块</th><th>只数</th><th>{{ day }}(等权)</th><th>相对SPY</th><th>参照ETF</th><th>涨/跌</th><th>5日</th><th>20日</th><th>低位</th><th>高位</th><th>领涨</th><th>领跌</th><th>细分</th></tr>
 {% for g in sector_summary.groups %}
 <tr><td><b>{{ g.group }}</b></td><td>{{ g.n }}</td>
 <td class="{{ 'up' if g.avg > 0 else 'down' if g.avg < 0 else '' }}">{{ "%+.1f%%"|format(g.avg) }}</td>
@@ -154,7 +154,7 @@ tr:last-child td { border-bottom: none; }
 {% if low_list %}
 <div class="card scroll">
 <table>
-<tr><th>票</th><th>板块</th><th>档位</th><th>抄底分</th><th>现价</th><th>今日</th><th>RSI</th><th>ATR%</th><th>低于20日线</th><th>20日回撤</th><th>距52周高</th><th>财报</th><th>为什么低</th></tr>
+<tr><th>票</th><th>板块</th><th>档位</th><th>抄底分</th><th>现价</th><th>{{ day }}</th><th>RSI</th><th>ATR%</th><th>低于20日线</th><th>20日回撤</th><th>距52周高</th><th>财报</th><th>为什么低</th></tr>
 {% for r in low_list %}
 <tr><td><b>{{ r.ticker }}</b>{% if r.held %} ★{% endif %}</td>
 <td class="muted">{{ r.sector or "-" }}</td>
@@ -770,7 +770,8 @@ def _trading_sheets(ok_stocks: list[dict], wl_by_symbol: dict, mmode) -> dict:
 
 
 def _analyze_one(item: dict) -> dict:
-    # 新闻、做空数据只在需要时单独取：两百多只票逐只取新闻要好几分钟（Finnhub 每秒一次），报告也用不上。
+    # 新闻、做空数据只在需要时单独取：两百多只票逐只取新闻要好几分钟（Finnhub 每秒一次）。
+    # 所以 HTML 低位卡片不再带新闻；要查原因的票，简报的参考段单独取了标题。
     sym = item["symbol"]
     try:
         s = stock.analyze(sym, with_news=False, with_short=SHOW_TRADING)
@@ -781,7 +782,8 @@ def _analyze_one(item: dict) -> dict:
 
 
 def generate(session: str = "premarket") -> dict:
-    """生成报告，返回各文件路径：html 给人看，json 是全量数据，brief/push 给云端任务发简报和推送。"""
+    """生成报告，返回要打印给云端任务看的东西：html 给人看，json 是全量数据，brief/push 是简报和推送，
+    data 是取数情况，market_closed 只在盘后跑但今天没有新K线时才有。"""
     now = datetime.now(ZoneInfo("America/Chicago"))
     mkt = market.overview(session)
 
@@ -798,6 +800,12 @@ def generate(session: str = "premarket") -> dict:
     wl_by_symbol = {i["symbol"]: i for i in load_universe()}
     wl_symbols = set(wl_by_symbol)
     earnings = [e for e in data.get_earnings_calendar(45) if e.get("symbol") in wl_symbols]
+    have = {e["symbol"] for e in earnings}
+    for item in wl_by_symbol.values():       # 批量日历只认主上市代码，这些票要单独查（GOOG 在里面叫 GOOGL，TSM 叫 2330.TW）
+        if item.get("earnings_lookup") and item["symbol"] not in have:
+            when = data.get_next_earnings(item["symbol"], 45)
+            if when:
+                earnings.append({"symbol": item["symbol"], "date": when, "hour": "", "eps_estimate": None})
     edates = {e["symbol"]: e["date"] for e in earnings}
     for item in wl_by_symbol.values():
         if item.get("earnings"):
@@ -827,9 +835,14 @@ def generate(session: str = "premarket") -> dict:
     for s in card_stocks:
         s["low_reasons"] = [x for x in (s["dip"].get("reasons") or []) if "支撑区" not in x]
 
+    failed = [s["ticker"] for s in stocks if "error" in s]
+    as_of = data.get_daily("SPY", "2y").index[-1].date().isoformat()
+    stale = session == "postmarket" and as_of != now.date().isoformat()     # 休市日：cron 照常触发，数据还是上一个交易日
+
     title = f"{'盘前' if session == 'premarket' else '盘后'}持仓高位 + 低位清单 · {now.strftime('%Y-%m-%d')}"
     html = TEMPLATE.render(
         title=title,
+        day=brief.day_label(session, stale),
         generated_at=now.strftime("%Y-%m-%d %H:%M %Z"),
         session=session,
         mkt=mkt,
@@ -864,8 +877,7 @@ def generate(session: str = "premarket") -> dict:
         json.dumps(
             {"holdings": holdings, "high_list": high_list, "high_context": high_ctx,
              "low_list": low_list, "low_context": low_ctx, "sector_summary": sector_summary,
-             "data_status": {"polygon": data.polygon_status(), "n_ok": len(ok_stocks),
-                             "failed": [s["ticker"] for s in stocks if "error" in s]},
+             "data_status": {"polygon": data.polygon_status(), "n_ok": len(ok_stocks), "failed": failed, "as_of": as_of},
              "market_mode": mmode_desc, **trading,
              "market": mkt, "stocks": stocks, "earnings": earnings},
             ensure_ascii=False, indent=1, default=str,
@@ -877,12 +889,17 @@ def generate(session: str = "premarket") -> dict:
     why = brief.pick_why(session, high_list, low_list, sector_summary)
     why_news = {t: [n["title"] for n in data.get_news(t, 4)] for t in why["up"] + why["down"]}
     brief_path = REPORTS_DIR / f"{stamp}-{session}-brief.md"
-    brief_path.write_text(brief.brief_md(session, high_list, high_ctx, low_list, low_ctx,
-                                         sector_summary, why, why_news), encoding="utf-8")
+    brief_path.write_text(brief.brief_md(session, high_list, high_ctx, low_list, low_ctx, sector_summary, why, why_news,
+                                         as_of=as_of, stale=stale, failed=failed), encoding="utf-8")
     paths = {"html": html_path, "json": json_path, "brief": brief_path}
-    for i, text in enumerate(brief.pushes(session, high_list, low_list, sector_summary, _vix_note(low_ctx)), 1):
+    for i, text in enumerate(brief.pushes(session, high_list, low_list, sector_summary, _vix_note(low_ctx),
+                                          n_ok=len(ok_stocks), n_failed=len(failed),
+                                          stale_as_of=as_of if stale else None), 1):
         paths[f"push{i}"] = REPORTS_DIR / f"{stamp}-{session}-push{i}.txt"
         paths[f"push{i}"].write_text(text, encoding="utf-8")
+    paths["data"] = f"ok={len(ok_stocks)} failed={len(failed)} as_of={as_of}"
+    if stale:
+        paths["market_closed"] = f"最新K线是 {as_of}，今天没有新K线（休市或数据没更新），今天没有盘后简报"
     return paths
 
 
