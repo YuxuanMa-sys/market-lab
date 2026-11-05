@@ -8,7 +8,7 @@ BREADTH_UNIVERSE = [
     "PM", "QCOM", "IBM", "GE", "CAT", "TXN", "VZ", "AMGN", "INTC", "CMCSA",
     "NOW", "UNP", "NKE", "COP", "RTX", "SPGI", "HON", "T", "LOW", "BKNG",
     "UPS", "GS", "AXP", "ELV", "SCHW", "BLK", "MS", "PLD", "DE", "MDT",
-    "LMT", "AMAT", "TJX", "SBUX", "BMY", "GILD", "ADP", "MMC", "CB", "PFE",
+    "LMT", "AMAT", "TJX", "SBUX", "BMY", "GILD", "ADP", "MRSH", "CB", "PFE",
     "C", "VRTX", "MU", "LRCX", "PANW", "ANET", "KLAC", "SNPS", "CDNS", "CRWD",
     "ABNB", "MDLZ", "REGN", "ADI", "ISRG", "PYPL", "EOG", "SO", "DUK", "MO",
 ]

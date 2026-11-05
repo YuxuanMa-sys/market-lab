@@ -3,16 +3,34 @@ from __future__ import annotations
 
 import os
 import sys as _sys
+import threading
+import time
 from datetime import date, timedelta
 
 import requests
 
 BASE = "https://finnhub.io/api/v1"
+MIN_INTERVAL = 1.05     # 免费档 60 次/分钟。观察池上百只票时必须自己限速，否则后面的请求全被 429
+
+_lock = threading.Lock()
+_last_call = 0.0
 
 
 def _get(path: str, **params) -> dict | list:
+    global _last_call
     params["token"] = os.environ["FINNHUB_API_KEY"]
-    r = requests.get(f"{BASE}/{path}", params=params, timeout=15)
+    for attempt in range(2):
+        with _lock:
+            wait = _last_call + MIN_INTERVAL - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            _last_call = time.monotonic()
+        r = requests.get(f"{BASE}/{path}", params=params, timeout=15)
+        if r.status_code == 429 and attempt == 0:
+            time.sleep(5)
+            continue
+        r.raise_for_status()
+        return r.json()
     r.raise_for_status()
     return r.json()
 
@@ -54,7 +72,7 @@ def earnings_calendar(days: int = 14) -> list[dict]:
                 continue
             seen.add(key)
             out.append({
-                "symbol": e.get("symbol"),
+                "symbol": (e.get("symbol") or "").replace(".", "-"),
                 "date": e.get("date"),
                 "hour": {"bmo": "盘前", "amc": "盘后"}.get(e.get("hour"), e.get("hour") or ""),
                 "eps_estimate": e.get("epsEstimate"),
@@ -72,13 +90,14 @@ def company_news(symbol: str, days: int = 7, limit: int = 8) -> list[dict]:
     today = date.today()
     items = _get(
         "company-news",
-        symbol=symbol,
+        symbol=symbol.replace("-", "."),     # Finnhub 用 BRK.B，我们用 BRK-B
         **{"from": (today - timedelta(days=days)).isoformat(), "to": today.isoformat()},
     )
     out = []
     for it in items[:limit]:
         out.append({
             "title": it.get("headline", ""),
+            "summary": it.get("summary", ""),
             "url": it.get("url", ""),
             "source": it.get("source", ""),
             "time": str(it.get("datetime", "")),

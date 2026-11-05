@@ -40,3 +40,10 @@ def test_parse_holdings_formats():
     from market_lab.report import parse_holdings
     txt = "# 注释\narm, qcom，smmt\n  SPCX  # 备注\nARM\n\n"
     assert parse_holdings(txt) == ["ARM", "QCOM", "SMMT", "SPCX"]
+
+
+def test_low_list_carries_sector(monkeypatch):
+    df = pd.DataFrame({"High": [100.0] * 30, "Close": [95.0] * 30})
+    monkeypatch.setattr(report.data, "get_daily", lambda t, period="2y": df)
+    out = report.build_low_list([_stock("B", 60, [])], {"B": {"symbol": "B", "sector": "贵金属"}}, set())
+    assert out[0]["sector"] == "贵金属" and out[0]["held"] is False

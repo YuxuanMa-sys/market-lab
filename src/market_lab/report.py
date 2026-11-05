@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import yaml
 from jinja2 import Template
 
-from . import data, market, stock
+from . import brief, data, market, sectors, stock
 from .advice import ACTION_URGENCY, URGENT_ACTIONS, advise, market_mode
 from .sizing import RISK_PER_TRADE_PCT, apply_sizing
 
@@ -103,9 +103,10 @@ tr:last-child td { border-bottom: none; }
 </div>
 <div class="card scroll">
 <table>
-<tr><th>持仓</th><th>档位</th><th>高位分</th><th>昨日</th><th>现价</th><th>今日</th><th>RSI</th><th>ATR%</th><th>高于20日线</th><th>20日涨幅</th><th>距52周高</th><th>抄底分</th><th>财报</th><th>为什么高</th></tr>
+<tr><th>持仓</th><th>板块</th><th>档位</th><th>高位分</th><th>昨日</th><th>现价</th><th>今日</th><th>RSI</th><th>ATR%</th><th>高于20日线</th><th>20日涨幅</th><th>距52周高</th><th>抄底分</th><th>财报</th><th>为什么高</th></tr>
 {% for r in high_list %}
 <tr><td><b>{{ r.ticker }}</b>{% if r.new_entry %} 🆕{% endif %}{% if r.extreme_runup %} ⚠{% endif %}</td>
+<td class="muted">{{ r.sector or "-" }}</td>
 {% if r.error %}<td colspan="13" class="muted">{{ r.band or "取数失败" }}：{{ r.error }}</td>{% else %}
 <td{% if r.tier == "深度高位" %} class="up"{% endif %}><b>{{ r.tier or "不在高位" }}</b></td>
 <td>{{ r.score if r.score is not none else "-" }}</td><td>{{ r.prev_score if r.prev_score is not none else "-" }}</td><td>{{ r.price }}</td>
@@ -124,6 +125,27 @@ tr:last-child td { border-bottom: none; }
 <div class="card muted">holdings.txt 里没有持仓。</div>
 {% endif %}
 
+{% if sector_summary and sector_summary.groups %}
+<h2>📊 板块总结</h2>
+<div class="card scroll">
+<table>
+<tr><th>板块</th><th>只数</th><th>今日(等权)</th><th>相对SPY</th><th>参照ETF</th><th>涨/跌</th><th>5日</th><th>20日</th><th>低位</th><th>高位</th><th>领涨</th><th>领跌</th><th>细分</th></tr>
+{% for g in sector_summary.groups %}
+<tr><td><b>{{ g.group }}</b></td><td>{{ g.n }}</td>
+<td class="{{ 'up' if g.avg > 0 else 'down' if g.avg < 0 else '' }}">{{ "%+.1f%%"|format(g.avg) }}</td>
+<td>{{ "%+.1f"|format(g.vs_spy) if g.vs_spy is not none else "-" }}</td>
+<td class="muted">{% if g.etf %}{{ g.etf }}{% if g.etf_chg is not none %} {{ "%+.1f%%"|format(g.etf_chg) }}{% endif %}{% else %}-{% endif %}</td>
+<td>{{ g.up }}/{{ g.down }}</td>
+<td>{{ "%+.1f%%"|format(g.ret5) if g.ret5 is not none else "-" }}</td><td>{{ "%+.1f%%"|format(g.ret20) if g.ret20 is not none else "-" }}</td>
+<td>{{ g.n_low }}{% if g.n_deep %}（深{{ g.n_deep }}）{% endif %}</td><td>{{ g.n_high }}</td>
+<td>{{ g.best.ticker }} {{ "%+.1f%%"|format(g.best.chg) }}</td><td>{{ g.worst.ticker }} {{ "%+.1f%%"|format(g.worst.chg) }}</td>
+<td class="muted">{% for x in g.subs %}{{ x.sub }} {{ "%+.1f"|format(x.avg) }}{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+{% endfor %}
+</table>
+<div class="muted">观察池内等权平均，不等于行业指数；ETF 是市值权重，只作参照。5日、20日是这些票的平均涨幅。</div>
+</div>
+{% endif %}
+
 <h2>📉 低位清单</h2>
 <div class="card">
   {{ low_context.vix_line }}
@@ -132,9 +154,10 @@ tr:last-child td { border-bottom: none; }
 {% if low_list %}
 <div class="card scroll">
 <table>
-<tr><th>票</th><th>档位</th><th>抄底分</th><th>现价</th><th>今日</th><th>RSI</th><th>ATR%</th><th>低于20日线</th><th>20日回撤</th><th>距52周高</th><th>财报</th><th>为什么低</th></tr>
+<tr><th>票</th><th>板块</th><th>档位</th><th>抄底分</th><th>现价</th><th>今日</th><th>RSI</th><th>ATR%</th><th>低于20日线</th><th>20日回撤</th><th>距52周高</th><th>财报</th><th>为什么低</th></tr>
 {% for r in low_list %}
 <tr><td><b>{{ r.ticker }}</b>{% if r.held %} ★{% endif %}</td>
+<td class="muted">{{ r.sector or "-" }}</td>
 <td{% if r.tier == "深度低位" %} class="down"{% endif %}><b>{{ r.tier }}</b></td>
 <td>{{ r.dip|int }}</td><td>{{ r.price }}</td>
 <td class="{{ 'up' if r.chg_pct > 0 else 'down' if r.chg_pct < 0 else '' }}">{{ "%+.1f%%"|format(r.chg_pct) }}</td>
@@ -411,7 +434,8 @@ def build_low_list(ok_stocks: list[dict], wl_by_symbol: dict, held: set[str] | N
         hi20 = float(df["High"].tail(20).max())
         ma20 = (s.get("ma", {}).get(20) or {}).get("value")
         out.append({
-            "ticker": s["ticker"], "held": s["ticker"] in held, "tier": tier, "dip": dip,
+            "ticker": s["ticker"], "held": s["ticker"] in held, "sector": item.get("sector"),
+            "tier": tier, "dip": dip,
             "price": s["price"], "chg_pct": s["chg_pct"], "rsi": s["rsi"],
             "atr_pct": round(s["atr"] / s["price"] * 100, 1) if s.get("atr") and s.get("price") else None,
             "dev_atr": round((s["price"] - ma20) / s["atr"], 2) if ma20 and s.get("atr") else 0.0,
@@ -531,7 +555,8 @@ def first_high_since(df, since: str | None, score) -> bool:
 
 
 def build_high_list(ok_stocks: list[dict], holdings: list[str], errors: dict | None = None,
-                    spy_below: bool = False, since: dict | None = None) -> list[dict]:
+                    spy_below: bool = False, since: dict | None = None,
+                    wl_by_symbol: dict | None = None) -> list[dict]:
     """持仓高位分：holdings.txt 里每只票一行（不论分数高低），按高位分从高到低。
 
     2026-10-18 用户："每天更新持仓（不管本钱），给我票是否在高位的信号，也有分数，我自己考虑该不该卖"。
@@ -543,9 +568,10 @@ def build_high_list(ok_stocks: list[dict], holdings: list[str], errors: dict | N
     out = []
     for t in holdings:
         s = by.get(t)
+        sector = ((wl_by_symbol or {}).get(t) or {}).get("sector")
         if s is None or not s.get("high"):
             out.append({"ticker": t, "error": (errors or {}).get(t, "没有分析结果"), "score": None, "tier": None,
-                        "notes": []})
+                        "sector": sector, "notes": []})
             continue
         h = s["high"]
         f = h.get("facts") or {}
@@ -553,7 +579,7 @@ def build_high_list(ok_stocks: list[dict], holdings: list[str], errors: dict | N
         t_since = (since or {}).get(t)
         if score is None:          # 历史太短（新股/刚复牌），无法评分：走"无法评分"行，模板不格式化空字段
             out.append({"ticker": t, "error": "；".join(h.get("reasons") or ["数据不足"]), "score": None,
-                        "tier": None, "band": h.get("band"), "since": t_since, "notes": []})
+                        "tier": None, "band": h.get("band"), "since": t_since, "sector": sector, "notes": []})
             continue
         df = data.get_daily(t, "2y")
         prev_score = high_score(df.iloc[:-1]).get("score") if len(df) > 1 else None
@@ -573,8 +599,8 @@ def build_high_list(ok_stocks: list[dict], holdings: list[str], errors: dict | N
         if f.get("extreme_runup"):
             notes.append(HIGH_TEXT["extreme"].format(run=f["runup20"] * 100, atr=f["atr_pct"] * 100))
         out.append({
-            "ticker": t, "score": score, "prev_score": prev_score, "tier": tier, "band": h.get("band"),
-            "since": t_since, "new_entry": new_entry, "extreme_runup": bool(f.get("extreme_runup")),
+            "ticker": t, "sector": sector, "score": score, "prev_score": prev_score, "tier": tier,
+            "band": h.get("band"), "since": t_since, "new_entry": new_entry, "extreme_runup": bool(f.get("extreme_runup")),
             "price": s["price"], "chg_pct": s["chg_pct"], "rsi14": f.get("rsi14"),
             "atr_pct": round(f["atr_pct"] * 100, 1) if f.get("atr_pct") is not None else None,
             "dev_atr": f.get("dev_atr"), "runup20_pct": round(f["runup20"] * 100, 1) if f.get("runup20") is not None else None,
@@ -643,47 +669,13 @@ def low_context(mkt: dict) -> dict:
     }
 
 
-def generate(session: str = "premarket") -> tuple[Path, Path]:
-    """生成报告，返回 (html路径, json路径)。json 给 Claude/程序读，html 给人看。"""
-    now = datetime.now(ZoneInfo("America/Chicago"))
-    mkt = market.overview(session)
+# 2026-10-17 用户决定自己看价格买、自己止损、自己卖：操作单/止损单/仓位仪表盘/支撑区计划不再展示，也不再计算。
+# 改回 True 即可恢复（报告里显示，stock.analyze 也会重新取做空数据）。
+SHOW_TRADING = False
 
-    stocks = []
-    holdings = load_holdings()
-    for item in load_universe():
-        sym = item["symbol"]
-        try:
-            s = stock.analyze(sym)
-            s["note"] = item.get("note", "")
-            stocks.append(s)
-        except Exception as e:
-            stocks.append({"ticker": sym, "error": str(e)})
 
-    ok_stocks = [s for s in stocks if "error" not in s]
-
-    # 财报日必须在 advise() 之前就位：原先这段在 80 行之后才跑，导致 advise() 里
-    # a.get("earnings_date") 恒为 None、「财报降风险」那条分支从未触发过(死代码)，
-    # HTML 上的 📅 横幅只是事后贴上去的装饰，没有任何挂单或动作反映它。
-    # 窗口从 14 天拉到 45 天：持仓窗口是 15 个交易日(≈21天)，14 天的前瞻看不到
-    # 自己持有期内就会撞上的财报。watchlist 里可用 earnings: YYYY-MM-DD 钉住
-    # 公司已确认、而 Finnhub 日历没覆盖到的日期（覆盖很稀：10 个持仓里只认得 2 个）。
-    wl_by_symbol = {i["symbol"]: i for i in load_universe()}
-    wl_symbols = set(wl_by_symbol)
-    earnings = [e for e in data.get_earnings_calendar(45) if e.get("symbol") in wl_symbols]
-    edates = {e["symbol"]: e["date"] for e in earnings}
-    for item in wl_by_symbol.values():
-        if item.get("earnings"):
-            edates[item["symbol"]] = str(item["earnings"])   # 人工确认日优先于日历
-    for s in ok_stocks:
-        s["earnings_date"] = edates.get(s["ticker"])
-    have = {e["symbol"] for e in earnings}
-    for item in wl_by_symbol.values():
-        if item.get("earnings") and item["symbol"] not in have:
-            earnings.append({"symbol": item["symbol"], "date": str(item["earnings"]),
-                             "hour": "", "eps_estimate": None, "manual": True})
-    earnings.sort(key=lambda e: e["date"])
-
-    mmode, mmode_desc = market_mode(mkt)
+def _trading_sheets(ok_stocks: list[dict], wl_by_symbol: dict, mmode) -> dict:
+    """操作单、止损单、仓位仪表盘（SHOW_TRADING=False 时不跑）。"""
     style = load_order_style()
     for s in ok_stocks:
         s["advice"] = advise(s, wl_by_symbol.get(s["ticker"], {}), mmode, style)
@@ -773,14 +765,63 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         if r["stop"] is not None else f"{r['ticker']}⚠无止损"
         for r in stop_sheet
     )
+    return {"order_sheet": order_sheet, "n_noop": n_noop, "stop_sheet": stop_sheet, "stop_line": stop_line,
+            "risk_dashboard": risk_dashboard}
 
+
+def _analyze_one(item: dict) -> dict:
+    # 新闻、做空数据只在需要时单独取：两百多只票逐只取新闻要好几分钟（Finnhub 每秒一次），报告也用不上。
+    sym = item["symbol"]
+    try:
+        s = stock.analyze(sym, with_news=False, with_short=SHOW_TRADING)
+        s["note"] = item.get("note", "")
+        return s
+    except Exception as e:
+        return {"ticker": sym, "error": str(e)}
+
+
+def generate(session: str = "premarket") -> dict:
+    """生成报告，返回各文件路径：html 给人看，json 是全量数据，brief/push 给云端任务发简报和推送。"""
+    now = datetime.now(ZoneInfo("America/Chicago"))
+    mkt = market.overview(session)
+
+    holdings = load_holdings()
+    stocks = data.pmap(_analyze_one, load_universe())
+    ok_stocks = [s for s in stocks if "error" not in s]
+
+    # 财报日必须在 advise() 之前就位：原先这段在 80 行之后才跑，导致 advise() 里
+    # a.get("earnings_date") 恒为 None、「财报降风险」那条分支从未触发过(死代码)，
+    # HTML 上的 📅 横幅只是事后贴上去的装饰，没有任何挂单或动作反映它。
+    # 窗口从 14 天拉到 45 天：持仓窗口是 15 个交易日(≈21天)，14 天的前瞻看不到
+    # 自己持有期内就会撞上的财报。watchlist 里可用 earnings: YYYY-MM-DD 钉住
+    # 公司已确认、而 Finnhub 日历没覆盖到的日期（覆盖很稀：10 个持仓里只认得 2 个）。
+    wl_by_symbol = {i["symbol"]: i for i in load_universe()}
+    wl_symbols = set(wl_by_symbol)
+    earnings = [e for e in data.get_earnings_calendar(45) if e.get("symbol") in wl_symbols]
+    edates = {e["symbol"]: e["date"] for e in earnings}
+    for item in wl_by_symbol.values():
+        if item.get("earnings"):
+            edates[item["symbol"]] = str(item["earnings"])   # 人工确认日优先于日历
+    for s in ok_stocks:
+        s["earnings_date"] = edates.get(s["ticker"])
+    have = {e["symbol"] for e in earnings}
+    for item in wl_by_symbol.values():
+        if item.get("earnings") and item["symbol"] not in have:
+            earnings.append({"symbol": item["symbol"], "date": str(item["earnings"]),
+                             "hour": "", "eps_estimate": None, "manual": True})
+    earnings.sort(key=lambda e: e["date"])
+
+    mmode, mmode_desc = market_mode(mkt)
+    trading = (_trading_sheets(ok_stocks, wl_by_symbol, mmode) if SHOW_TRADING else
+               {"order_sheet": [], "n_noop": len(ok_stocks), "stop_sheet": [], "stop_line": "", "risk_dashboard": {}})
 
     low_list = build_low_list(ok_stocks, wl_by_symbol, set(holdings))
     low_ctx = low_context(mkt)
     spy_below = low_ctx.get("spy_dist200") is not None and low_ctx["spy_dist200"] < 0
     high_list = build_high_list(ok_stocks, holdings, {s["ticker"]: s["error"] for s in stocks if "error" in s},
-                                spy_below, holding_since(holdings))
+                                spy_below, holding_since(holdings), wl_by_symbol)
     high_ctx = high_context(spy_below)
+    sector_summary = sectors.build_sector_summary(ok_stocks, wl_by_symbol, _last_chg("SPY"), sectors.etf_changes())
     low_set = {r["ticker"] for r in low_list}
     card_stocks = sorted([s for s in ok_stocks if s["ticker"] in low_set], key=lambda s: -s["dip"]["score"])
     for s in card_stocks:
@@ -794,25 +835,23 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
         mkt=mkt,
         mmode_desc=mmode_desc,
         urgent_actions=URGENT_ACTIONS,
-        order_sheet=order_sheet,
-        stop_sheet=stop_sheet,
-        n_noop=n_noop,
-        risk=risk_dashboard,
+        order_sheet=trading["order_sheet"],
+        stop_sheet=trading["stop_sheet"],
+        n_noop=trading["n_noop"],
+        risk=trading["risk_dashboard"],
         stocks=ok_stocks,
         card_stocks=card_stocks,
         low_list=low_list,
         low_context=low_ctx,
         high_list=high_list,
         high_context=high_ctx,
-        # 2026-10-17 用户决定自己看价格买、自己止损、自己卖：操作单/止损单/仓位仪表盘/支撑区计划不再展示。
-        # 代码和 JSON 字段保留，改回 True 即可恢复。
-        show_trading=False,
+        sector_summary=sector_summary,
+        show_trading=SHOW_TRADING,
         err_stocks=[s for s in stocks if "error" in s],
         earnings=earnings,
         data_sources=(
-            ("Polygon(15分钟延迟)" if data.has_polygon() else "yfinance(免费)")
-            + (" + Ortex空头" if os.environ.get("ORTEX_API_KEY") else "")
-            + (" + Finnhub财报日历" if os.environ.get("FINNHUB_API_KEY") else "")
+            ("Polygon(15分钟延迟)" if data.has_polygon() else "Yahoo(免费)")
+            + (" + Finnhub财报日历/新闻" if os.environ.get("FINNHUB_API_KEY") else "")
         ),
     )
 
@@ -824,11 +863,40 @@ def generate(session: str = "premarket") -> tuple[Path, Path]:
     json_path.write_text(
         json.dumps(
             {"holdings": holdings, "high_list": high_list, "high_context": high_ctx,
-             "low_list": low_list, "low_context": low_ctx,
-             "market_mode": mmode_desc, "order_sheet": order_sheet, "stop_sheet": stop_sheet, "stop_line": stop_line, "risk_dashboard": risk_dashboard,
+             "low_list": low_list, "low_context": low_ctx, "sector_summary": sector_summary,
+             "data_status": {"polygon": data.polygon_status(), "n_ok": len(ok_stocks),
+                             "failed": [s["ticker"] for s in stocks if "error" in s]},
+             "market_mode": mmode_desc, **trading,
              "market": mkt, "stocks": stocks, "earnings": earnings},
             ensure_ascii=False, indent=1, default=str,
         ),
         encoding="utf-8",
     )
-    return html_path, json_path
+
+    # 给云端任务的简报和推送：数字和格式这里定死，模型只填原因、原样发送
+    why = brief.pick_why(session, high_list, low_list, sector_summary)
+    why_news = {t: [n["title"] for n in data.get_news(t, 4)] for t in why["up"] + why["down"]}
+    brief_path = REPORTS_DIR / f"{stamp}-{session}-brief.md"
+    brief_path.write_text(brief.brief_md(session, high_list, high_ctx, low_list, low_ctx,
+                                         sector_summary, why, why_news), encoding="utf-8")
+    paths = {"html": html_path, "json": json_path, "brief": brief_path}
+    for i, text in enumerate(brief.pushes(session, high_list, low_list, sector_summary, _vix_note(low_ctx)), 1):
+        paths[f"push{i}"] = REPORTS_DIR / f"{stamp}-{session}-push{i}.txt"
+        paths[f"push{i}"].write_text(text, encoding="utf-8")
+    return paths
+
+
+def _last_chg(ticker: str) -> float | None:
+    """最近一根已收盘日线的涨跌幅，和个股 chg_pct 同一口径。"""
+    try:
+        c = data.get_daily(ticker, "2y")["Close"]
+        return round((float(c.iloc[-1]) / float(c.iloc[-2]) - 1) * 100, 2)
+    except Exception:
+        return None
+
+
+def _vix_note(low_ctx: dict) -> str:
+    v = low_ctx.get("vix")
+    if v is None:
+        return ""
+    return f"VIX {v} {'平静' if v < 18 else ('中性' if v < 25 else '恐慌')}"

@@ -24,7 +24,7 @@ OVERNIGHT_TICKERS = [
 
 def breadth() -> dict:
     """市场宽度：大盘股样本中站上50/200日均线的比例、当日上涨比例。"""
-    bars = data.get_daily_batch(BREADTH_UNIVERSE, period="1y")
+    bars = data.get_daily_batch(BREADTH_UNIVERSE, period="2y")   # 和个股分析共用 2y 缓存，省一轮请求
     above50 = above200 = up = total = 0
     for t, df in bars.items():
         close = df["Close"].dropna()
@@ -195,5 +195,5 @@ def overview(session: str = "premarket") -> dict:
         "leverage": leverage_light(spy_a, vix, dip_g),
         "spy": index_levels(spy_df),
         "qqq": index_levels(qqq_df),
-        "market_news": data.get_news("SPY", limit=8),
+        "market_news": data.get_market_news(limit=8),
     }

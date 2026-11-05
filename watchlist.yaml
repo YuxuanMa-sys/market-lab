@@ -1,160 +1,259 @@
-# 自选股清单：每天盘前/盘后报告会逐个分析这里的票。
+# 观察池：每天盘前/盘后报告和盘中提醒都看这里的票。一行一只，按板块分组，要加票就照抄一行。
+#   symbol    代码。伯克希尔这类写 BRK-B（用连字符）。
+#   sector    细分板块，必须是 sectors.yaml 里列出的名字。
+#   note      一句话说明是什么公司，只写事实。
+#   earnings  财报日 YYYY-MM-DD（可选）。只在财报日历查不到时才填；人工值会覆盖日历值，填错会压掉正确日期。
 #
-# order_style: 挂单风格（券商能力适配）
-#   hybrid  = 混合方案（当前）：止损单常挂兜底，止盈不挂单由盘中提醒手动兑现
-#   single  = 单笔全仓：每仓一张卖单，按"就近原则"挂
-#             止损或止盈側，另一侧由盘中提醒监控；止盈=成本×1.10(回测最优)
-#   oco     = 若券商支持OCO条件单(Fidelity网页版 Trade→Conditional)：止损+止盈同挂互斥
-#   tranche = 分批模式（1/3梯次，适合股数多的大账户）
-order_style: hybrid
+# 持仓不在这里维护，只看 holdings.txt。下面 QCOM 留着的 cost/pct/since/shares 是旧系统的字段：
+# since 用于判断持仓后第一次到高位，其余只有 show_trading=True（已隐藏的操作单）才用。
 #
-# 每只票可选字段：
-#   mode: swing | trend | event    策略模式，不填默认 swing
-#     swing = 抄底波段：触发进场(抄底分≥55)，TP止盈，破无效位认错
-#     trend = 趋势长拿：不设固定止盈，只在趋势破坏时提示离场（给你信仰的核心票）
-#     event = 财报事件票：同 swing 触发，但要求先确认暴跌是过度反应而非基本面恶化
-#   cost: 你的平均成本    填了就视为【持仓】，报告会给卖出侧建议（止盈/认错/轮动/财报降风险）
-#   pct: 该持仓占账户总值的百分比（如 8.5）——填了才能做仓位管理：卖单换算成仓位%、
-#        簇集中度检查、总开放风险仪表盘。账户总金额另存本地 account.yaml（不进 git）
-#   since: 买入日期 YYYY-MM-DD（可选）——填了才能启用时间止损监控：
-#          持仓约15个交易日仍未到TP1会提示离场换弹（回测：超时滞留仓位期望为负）
-#   earnings: 财报日 YYYY-MM-DD（可选）——【只在日历查不到时才填】。人工值会覆盖日历值，
-#        所以填错或过期(公司改期)会静默压掉正确日期。日历现已分片抓取、覆盖到 45 天，
-#        2026-10-10 实测 10 个持仓认得出 9 个，正常情况下不需要手填。
-#   shares: 数量（可选，仅展示用）
-#   note: 备注，原样显示在报告里
-#
-# 示例：
-#   - symbol: NVDA
-#     mode: trend
-#     cost: 155.5
-#     note: "AI核心仓"
+# 选票办法（2026-11-04）：保留之前的票，每个细分再按成交额补上龙头。没有按"值不值得买"挑：
+# 无偏研究里基本面筛选都没有改善低位票，所以这个池子保证的是覆盖面、能交易、数据可信。
+order_style: hybrid     # 旧操作单用的挂单风格（已隐藏）：hybrid/single/oco/tranche
 tickers:
-  - symbol: SMR
-    note: ""
-  - symbol: MRVL
-    note: ""
-  - symbol: IREN
-    note: ""
-  - symbol: WMT
-    note: ""
-  - symbol: CBRS
-    note: ""
-  - symbol: SNDK
-    note: ""
-  - symbol: GOOGL
-    note: ""
-  - symbol: MU
-    note: ""
-  - symbol: NBIS
-    note: ""
-  - symbol: GLW
-    note: ""
-  - symbol: CSCO
-    note: ""
-  - symbol: KLAC
-    note: ""
-  - symbol: CRWV
-    note: ""
-  - symbol: FORM
-    note: ""
-  - symbol: POWL
-    note: ""
-  - symbol: COHR
-    note: ""
-  - symbol: FN
-    note: ""
-  - symbol: AMKR
-    note: ""
-  - symbol: SOXX
-    note: ""
-  - symbol: LITE
-    note: ""
-  - symbol: RKLB
-    note: ""
-  - symbol: COIN
-    note: ""
-  - symbol: SPCX
-    cost: 147
-    pct: 6
-    since: 2026-10-15
-    note: ""
-  - symbol: DELL
-    note: ""
-  - symbol: INTC
-    note: ""
-  # ---- 2026-08-28 低相关科技分散池（corr=与当日持仓组合的1年日收益相关性）----
-  - symbol: VEEV
-    note: "生命科学垂直云；corr -0.04(负相关!)；8/26 beat+raise跳涨15%——等回调"
-  - symbol: GH
-    note: "液体活检筛查放量+44%营收；corr 0.15；仍亏损高beta"
-  - symbol: NU
-    note: "拉美数字银行；corr 0.31；单季净利破$11亿；汇率+信贷周期风险"
-  - symbol: SPOT
-    note: "订阅提价+回购；corr -0.01(零相关)；8/18科技普跌日逆势+6%承接极强"
-  - symbol: TTWO
-    note: "GTA VI 2026-11-19发售硬催化；corr 0.18；发售前sell-the-news风险"
-  - symbol: SNPS
-    note: "EDA龙头；corr 0.19(设计opex驱动,与设备capex错位)；8/26财报+16.8%——等回调"
-  # ---- 2026-08-19 新增观察池（板块分散候选，非买入清单）----
-  - symbol: SMMT
-    cost: 15.7
-    pct: 6.16
-    since: 2026-10-13
-    note: "生物医药/PD-1双抗；PDUFA 2026-11-14 硬催化，CRL风险真实存在"
-  - symbol: KTOS
-    note: "国防/无人僚机；订单积压$2B，从$134腰斩到$60后企稳"
-  - symbol: SOFI
-    note: "金融科技；Q2超预期+上调指引，YTD深跌后被持续买回"
-  - symbol: VST
-    note: "电力/AI供电；与KKR/NVIDIA合资，距高点-24%，催化剂+深回调组合"
-  - symbol: SYM
-    note: "仓储机器人；GAAP已盈利，依赖沃尔玛大客户"
-  - symbol: IONQ
-    note: "量子计算；营收+287%但60倍PS，板块情绪化剧烈"
-  - symbol: TEM
-    note: "AI医疗；EBITDA转正，今天刚+23%大涨——等回调，别追"
-  # ---- 2026-09-05 周度维护新增（云端routine筛选，push被403拦下后本地补上）----
-  - symbol: DDOG
-    note: "企业软件/可观测性；corr 0.09；8/6财报营收+36%大超，因AI大客户削减用量传闻月内-22%，9月初已现逢低买盘；风险：估值高，AI需求担忧若扩散再承压"
-  - symbol: TOST
-    note: "金融科技/餐饮SaaS；corr 0.04；Q2营收+23%超预期但EBITDA指引不及跌10-15%，机构逢低加仓；风险：硬件毛利承压"
-  - symbol: AFRM
-    note: "金融科技/BNPL；corr 0.32；Q2营收+33%大超+GAAP转盈，站稳68-72强支撑(68次触及)；风险：消费信贷周期+监管"
-  # ---- 2026-09-19 周度维护：剔BSX(论点破裂/网络攻击)、RDDT(催化剂已兑现)；新增SHOP、AXON ----
-  - symbol: SHOP
-    note: "软件SaaS/电商平台；corr 0.05；8/5 Q2营收+34%大超，Q3指引上调至30%+区间(远超市场26.3%一致预期)；7月高点$133回调至$120区间呈台阶式盘整而非破位；风险：估值高位，电商支出对宏观敏感"
-  # ---- 2026-09-26 周度维护：剔ASTS(论点破裂：证券欺诈调查+竞对降级)；新增FIS ----
-  - symbol: FIS
-    note: "企业金融科技/银行核心系统；corr 0.10；核心银行现代化换代潮+新签约(含千亿资产级新银行+多家de novo银行牌照)催化剂延续至26H2；抄底分55已达进场线(RSI 31超卖，20日回撤-17%)，现价距进场区上沿仅0.6%；估值极低(远期PE 5.6 vs行业17.6)；风险：Worldpay剥离后收入基数变化，分析师对增长可持续性仍谨慎"
-  # ---- 2026-10-03 周度维护：剔AMAT(长期dip<30且距进场区+19.2%，涨幅已充分兑现无新回调)、
-  # BABA(论点破裂：北京AI反垄断调查+国防部"中国军事公司"认定诉讼+Anthropic蒸馏指控，ADR较2025高点已跌45%)；
-  # 新增HII、RCL ----
-  - symbol: HII
-    note: "国防造船(弗吉尼亚级潜艇/航母)；corr 0.06；Q2 EPS大超38%+订单积压，自$455.9高点回撤41%至$268附近企稳；远期PE仅15倍远低同业；风险：劳动力/产能瓶颈，历史有拖期超支先例"
-  - symbol: RCL
-    note: "邮轮龙头；corr 0.13；8月来-26%回撤后美银/大摩密集上调目标价($330/$394)，催化剂为收购Sandals&Beaches 50%股权($30亿,拓展全包度假市场)+预订数据强劲；风险：消费支出敏感度，并购整合执行风险"
-  # ---- 2026-10-10 周度维护：剔CRWD(dip分0已持续6周+现价距进场区上沿15.4%+corr 0.31非强分散，8/26财报涨幅早兑现无新故事)；新增CRM ----
-  - symbol: CRM
-    note: "企业SaaS/CRM平台；corr 0.05(近零相关，强分散)；10/6财报大超单日+20%(六年最强单日)，此前从52周高点$269回撤24%后被买回——回调有真实承接；风险：追高需等新回调才有安全边际，AI变现叙事若证伪估值重估风险大"
-  # ---- 2026-10-10 新建持仓录入（pct = 用户报表值 ÷ 2）----
-  - symbol: WDC
-    note: "持仓；存储(暴跌日corr 0.77 vs MU/SNDK——同一场崩盘)"
-  - symbol: HOOD
-    note: "持仓；金融科技(暴跌日corr 0.62)——AI硬件以外唯一分散仓"
-  - symbol: QCOM
-    cost: 176.2
-    pct: 6.89
-    shares: 10
-    since: 2026-10-09
-    note: "持仓；AI硬件中相关性最松的一员(暴跌日corr 0.43~0.49)"
-  - symbol: ARM
-    cost: 240
-    pct: 4.82
-    since: 2026-10-14
-    note: "持仓；芯片平台(暴跌日corr 0.73)"
-  # ---- 2026-10-17 周度维护：剔ZS/RBRK/VKTX/AXON(催化剂已兑现——各自8/27、9/3、9/22、9月可转债定价后均无新故事，
-  # 下一催化剂均在4-6周窗口外)；因此前总数已超50上限(54只)，本周以剔为先，净减至50只，未新增。
-  # 研究到的候选(RTX/UNH/CCL，corr未跑)留给下周有剔除空间时再评估。
-  # 另：WDC、HOOD 的 note 写着"持仓"但没有 cost/pct 字段——铁律只保护带 cost/pct 的票，
-  # 这两只目前实际上是可被剔除/修改的"候选票"。如果它们是真实持仓，请尽快补上 cost/pct。
+  # ======== 半导体 ========
+  - {symbol: NVDA, sector: 计算芯片, note: "英伟达"}
+  - {symbol: AMD, sector: 计算芯片, note: "超威"}
+  - {symbol: AVGO, sector: 计算芯片, note: "博通"}
+  - {symbol: MRVL, sector: 计算芯片, note: "迈威尔"}
+  - {symbol: ARM, sector: 计算芯片, note: "安谋"}
+  - {symbol: QCOM, sector: 计算芯片, note: "高通", cost: 176.2, pct: 6.89, shares: 10, since: 2026-10-09}
+  - {symbol: CBRS, sector: 计算芯片, note: "Cerebras 晶圆级AI芯片"}
+  - {symbol: MU, sector: 存储, note: "美光"}
+  - {symbol: SNDK, sector: 存储, note: "闪迪"}
+  - {symbol: WDC, sector: 存储, note: "西部数据"}
+  - {symbol: STX, sector: 存储, note: "希捷"}
+  - {symbol: SKHY, sector: 存储, note: "SK海力士ADR"}
+  - {symbol: AMAT, sector: 设备, note: "应用材料"}
+  - {symbol: LRCX, sector: 设备, note: "泛林"}
+  - {symbol: KLAC, sector: 设备, note: "科磊"}
+  - {symbol: ASML, sector: 设备, note: "阿斯麦"}
+  - {symbol: TER, sector: 设备, note: "泰瑞达"}
+  - {symbol: FORM, sector: 设备, note: "FormFactor 探针卡"}
+  - {symbol: TSM, sector: 代工封测, note: "台积电"}
+  - {symbol: INTC, sector: 代工封测, note: "英特尔"}
+  - {symbol: AMKR, sector: 代工封测, note: "安靠"}
+  - {symbol: GFS, sector: 代工封测, note: "格芯"}
+  - {symbol: TXN, sector: 模拟, note: "德州仪器"}
+  - {symbol: ADI, sector: 模拟, note: "亚德诺"}
+  - {symbol: "ON", sector: 模拟, note: "安森美"}
+  - {symbol: NXPI, sector: 模拟, note: "恩智浦"}
+  - {symbol: MPWR, sector: 模拟, note: "芯源系统"}
+  - {symbol: SNPS, sector: EDA, note: "新思"}
+  - {symbol: CDNS, sector: EDA, note: "楷登"}
+  # ======== AI基建 ========
+  - {symbol: COHR, sector: 光互连, note: "Coherent 光模块"}
+  - {symbol: FN, sector: 光互连, note: "Fabrinet 光模块代工"}
+  - {symbol: GLW, sector: 光互连, note: "康宁"}
+  - {symbol: CIEN, sector: 光互连, note: "Ciena 光网络"}
+  - {symbol: AAOI, sector: 光互连, note: "应用光电"}
+  - {symbol: ALAB, sector: 光互连, note: "Astera Labs 互连芯片"}
+  - {symbol: CRDO, sector: 光互连, note: "Credo 有源线缆"}
+  - {symbol: ANET, sector: 服务器, note: "Arista 交换机"}
+  - {symbol: CSCO, sector: 服务器, note: "思科"}
+  - {symbol: DELL, sector: 服务器, note: "戴尔"}
+  - {symbol: SMCI, sector: 服务器, note: "超微电脑"}
+  - {symbol: HPE, sector: 服务器, note: "慧与"}
+  - {symbol: CLS, sector: 服务器, note: "Celestica 硬件代工"}
+  - {symbol: CRWV, sector: 算力云, note: "CoreWeave"}
+  - {symbol: NBIS, sector: 算力云, note: "Nebius"}
+  - {symbol: IREN, sector: 算力云, note: "IREN 矿企转算力"}
+  - {symbol: APLD, sector: 算力云, note: "Applied Digital"}
+  - {symbol: CIFR, sector: 算力云, note: "Cipher 矿企转算力"}
+  - {symbol: ORCL, sector: 算力云, note: "甲骨文"}
+  - {symbol: VRT, sector: 电力设备, note: "Vertiv 散热供电"}
+  - {symbol: GEV, sector: 电力设备, note: "GE Vernova 燃机电网"}
+  - {symbol: ETN, sector: 电力设备, note: "伊顿"}
+  - {symbol: POWL, sector: 电力设备, note: "Powell 配电"}
+  - {symbol: BE, sector: 电力设备, note: "Bloom Energy 燃料电池"}
+  - {symbol: PWR, sector: 电力设备, note: "Quanta 电网施工"}
+  # ======== 软件 ========
+  - {symbol: CRM, sector: 平台软件, note: "Salesforce"}
+  - {symbol: NOW, sector: 平台软件, note: "ServiceNow"}
+  - {symbol: ADBE, sector: 平台软件, note: "Adobe"}
+  - {symbol: INTU, sector: 平台软件, note: "Intuit"}
+  - {symbol: SAP, sector: 平台软件, note: "SAP"}
+  - {symbol: SNOW, sector: 数据软件, note: "Snowflake"}
+  - {symbol: DDOG, sector: 数据软件, note: "Datadog"}
+  - {symbol: MDB, sector: 数据软件, note: "MongoDB"}
+  - {symbol: NET, sector: 数据软件, note: "Cloudflare"}
+  - {symbol: CRWD, sector: 网安, note: "CrowdStrike"}
+  - {symbol: PANW, sector: 网安, note: "Palo Alto"}
+  - {symbol: ZS, sector: 网安, note: "Zscaler"}
+  - {symbol: FTNT, sector: 网安, note: "Fortinet"}
+  - {symbol: OKTA, sector: 网安, note: "Okta"}
+  - {symbol: SHOP, sector: 应用软件, note: "Shopify"}
+  - {symbol: TOST, sector: 应用软件, note: "Toast 餐饮SaaS"}
+  - {symbol: VEEV, sector: 应用软件, note: "Veeva 生命科学云"}
+  - {symbol: TEAM, sector: 应用软件, note: "Atlassian"}
+  - {symbol: HUBS, sector: 应用软件, note: "HubSpot"}
+  # ======== 互联网 ========
+  - {symbol: AAPL, sector: 巨头, note: "苹果"}
+  - {symbol: MSFT, sector: 巨头, note: "微软"}
+  - {symbol: GOOG, sector: 巨头, note: "谷歌C类"}
+  - {symbol: META, sector: 巨头, note: "Meta"}
+  - {symbol: AMZN, sector: 巨头, note: "亚马逊"}
+  - {symbol: APP, sector: 广告社交, note: "AppLovin"}
+  - {symbol: RDDT, sector: 广告社交, note: "Reddit"}
+  - {symbol: PINS, sector: 广告社交, note: "Pinterest"}
+  - {symbol: TTD, sector: 广告社交, note: "Trade Desk"}
+  - {symbol: NFLX, sector: 娱乐, note: "奈飞"}
+  - {symbol: SPOT, sector: 娱乐, note: "Spotify"}
+  - {symbol: DIS, sector: 娱乐, note: "迪士尼"}
+  - {symbol: TTWO, sector: 娱乐, note: "Take-Two"}
+  - {symbol: RBLX, sector: 娱乐, note: "Roblox"}
+  - {symbol: T, sector: 电信, note: "AT&T"}
+  - {symbol: VZ, sector: 电信, note: "威瑞森"}
+  - {symbol: TMUS, sector: 电信, note: "T-Mobile"}
+  # ======== 可选消费 ========
+  - {symbol: MELI, sector: 电商平台, note: "美客多"}
+  - {symbol: BABA, sector: 电商平台, note: "阿里巴巴"}
+  - {symbol: SE, sector: 电商平台, note: "Sea"}
+  - {symbol: UBER, sector: 电商平台, note: "Uber"}
+  - {symbol: DASH, sector: 电商平台, note: "DoorDash"}
+  - {symbol: TSLA, sector: 汽车, note: "特斯拉"}
+  - {symbol: GM, sector: 汽车, note: "通用汽车"}
+  - {symbol: RIVN, sector: 汽车, note: "Rivian"}
+  - {symbol: BKNG, sector: 出行, note: "Booking"}
+  - {symbol: RCL, sector: 出行, note: "皇家加勒比"}
+  - {symbol: CCL, sector: 出行, note: "嘉年华"}
+  - {symbol: DAL, sector: 出行, note: "达美航空"}
+  - {symbol: UAL, sector: 出行, note: "美联航"}
+  - {symbol: NKE, sector: 品牌餐饮, note: "耐克"}
+  - {symbol: LULU, sector: 品牌餐饮, note: "Lululemon"}
+  - {symbol: MCD, sector: 品牌餐饮, note: "麦当劳"}
+  - {symbol: SBUX, sector: 品牌餐饮, note: "星巴克"}
+  - {symbol: CMG, sector: 品牌餐饮, note: "Chipotle"}
+  - {symbol: RGR, sector: 品牌餐饮, note: "Sturm Ruger 枪械"}
+  # ======== 必需消费 ========
+  - {symbol: WMT, sector: 大众零售, note: "沃尔玛"}
+  - {symbol: COST, sector: 大众零售, note: "好市多"}
+  - {symbol: TGT, sector: 大众零售, note: "塔吉特"}
+  - {symbol: TJX, sector: 大众零售, note: "TJX 折扣零售"}
+  - {symbol: KO, sector: 日用食品, note: "可口可乐"}
+  - {symbol: PG, sector: 日用食品, note: "宝洁"}
+  - {symbol: PM, sector: 日用食品, note: "菲莫国际"}
+  # ======== 金融 ========
+  - {symbol: JPM, sector: 大银行, note: "摩根大通"}
+  - {symbol: BAC, sector: 大银行, note: "美国银行"}
+  - {symbol: C, sector: 大银行, note: "花旗"}
+  - {symbol: GS, sector: 大银行, note: "高盛"}
+  - {symbol: MS, sector: 大银行, note: "摩根士丹利"}
+  - {symbol: USB, sector: 地区银行, note: "美国合众银行"}
+  - {symbol: PNC, sector: 地区银行, note: "PNC"}
+  - {symbol: TFC, sector: 地区银行, note: "Truist"}
+  - {symbol: V, sector: 支付, note: "Visa"}
+  - {symbol: MA, sector: 支付, note: "万事达"}
+  - {symbol: PYPL, sector: 支付, note: "PayPal"}
+  - {symbol: FIS, sector: 支付, note: "FIS 银行核心系统"}
+  - {symbol: XYZ, sector: 支付, note: "Block"}
+  - {symbol: HOOD, sector: 金融科技, note: "Robinhood"}
+  - {symbol: SOFI, sector: 金融科技, note: "SoFi"}
+  - {symbol: AFRM, sector: 金融科技, note: "Affirm"}
+  - {symbol: NU, sector: 金融科技, note: "Nubank"}
+  - {symbol: IBKR, sector: 金融科技, note: "盈透证券"}
+  - {symbol: BX, sector: 资管, note: "黑石"}
+  - {symbol: KKR, sector: 资管, note: "KKR"}
+  - {symbol: APO, sector: 资管, note: "阿波罗"}
+  - {symbol: BRK-B, sector: 保险, note: "伯克希尔"}
+  - {symbol: PGR, sector: 保险, note: "Progressive"}
+  - {symbol: TRV, sector: 保险, note: "Travelers"}
+  # ======== 加密 ========
+  - {symbol: COIN, sector: 加密, note: "Coinbase"}
+  - {symbol: MSTR, sector: 加密, note: "Strategy 持币"}
+  - {symbol: CRCL, sector: 加密, note: "Circle 稳定币"}
+  - {symbol: MARA, sector: 加密, note: "MARA 矿企"}
+  - {symbol: BMNR, sector: 加密, note: "BitMine 持币"}
+  # ======== 医疗 ========
+  - {symbol: LLY, sector: 大药, note: "礼来"}
+  - {symbol: JNJ, sector: 大药, note: "强生"}
+  - {symbol: MRK, sector: 大药, note: "默沙东"}
+  - {symbol: ABBV, sector: 大药, note: "艾伯维"}
+  - {symbol: PFE, sector: 大药, note: "辉瑞"}
+  - {symbol: NVO, sector: 大药, note: "诺和诺德"}
+  - {symbol: VRTX, sector: 生物科技, note: "福泰"}
+  - {symbol: REGN, sector: 生物科技, note: "再生元"}
+  - {symbol: MRNA, sector: 生物科技, note: "Moderna"}
+  - {symbol: SMMT, sector: 生物科技, note: "Summit"}
+  - {symbol: VKTX, sector: 生物科技, note: "Viking"}
+  - {symbol: ISRG, sector: 器械, note: "直觉外科"}
+  - {symbol: BSX, sector: 器械, note: "波士顿科学"}
+  - {symbol: MDT, sector: 器械, note: "美敦力"}
+  - {symbol: UNH, sector: 医保, note: "联合健康"}
+  - {symbol: CVS, sector: 医保, note: "CVS"}
+  - {symbol: HUM, sector: 医保, note: "Humana"}
+  - {symbol: TMO, sector: 诊断工具, note: "赛默飞"}
+  - {symbol: DHR, sector: 诊断工具, note: "丹纳赫"}
+  - {symbol: ILMN, sector: 诊断工具, note: "Illumina"}
+  - {symbol: NTRA, sector: 新医疗, note: "Natera"}
+  - {symbol: GH, sector: 新医疗, note: "Guardant 液体活检"}
+  - {symbol: TEM, sector: 新医疗, note: "Tempus AI"}
+  - {symbol: HIMS, sector: 新医疗, note: "Hims & Hers"}
+  # ======== 工业 ========
+  - {symbol: BA, sector: 航空, note: "波音"}
+  - {symbol: GE, sector: 航空, note: "GE航空"}
+  - {symbol: HWM, sector: 航空, note: "Howmet 航空部件"}
+  - {symbol: LMT, sector: 军工, note: "洛克希德马丁"}
+  - {symbol: RTX, sector: 军工, note: "RTX"}
+  - {symbol: HII, sector: 军工, note: "亨廷顿英格尔斯 造船"}
+  - {symbol: KTOS, sector: 军工, note: "Kratos 无人机"}
+  - {symbol: CAT, sector: 机械自动化, note: "卡特彼勒"}
+  - {symbol: DE, sector: 机械自动化, note: "迪尔"}
+  - {symbol: URI, sector: 机械自动化, note: "联合租赁"}
+  - {symbol: ROK, sector: 机械自动化, note: "罗克韦尔"}
+  - {symbol: SYM, sector: 机械自动化, note: "Symbotic 仓储机器人"}
+  - {symbol: UNP, sector: 运输, note: "联合太平洋"}
+  - {symbol: UPS, sector: 运输, note: "UPS"}
+  - {symbol: FDX, sector: 运输, note: "联邦快递"}
+  # ======== 能源 ========
+  - {symbol: XOM, sector: 油气, note: "埃克森美孚"}
+  - {symbol: CVX, sector: 油气, note: "雪佛龙"}
+  - {symbol: COP, sector: 油气, note: "康菲"}
+  - {symbol: OXY, sector: 油气, note: "西方石油"}
+  - {symbol: SLB, sector: 油气, note: "斯伦贝谢"}
+  - {symbol: VLO, sector: 炼油中游, note: "瓦莱罗"}
+  - {symbol: MPC, sector: 炼油中游, note: "马拉松石油"}
+  - {symbol: WMB, sector: 炼油中游, note: "Williams"}
+  - {symbol: KMI, sector: 炼油中游, note: "金德摩根"}
+  - {symbol: LNG, sector: 炼油中游, note: "Cheniere"}
+  # ======== 电力 ========
+  - {symbol: VST, sector: 发电, note: "Vistra"}
+  - {symbol: CEG, sector: 发电, note: "Constellation"}
+  - {symbol: TLN, sector: 发电, note: "Talen"}
+  - {symbol: SMR, sector: 核能, note: "NuScale"}
+  - {symbol: OKLO, sector: 核能, note: "Oklo"}
+  - {symbol: CCJ, sector: 核能, note: "Cameco 铀"}
+  - {symbol: NEE, sector: 公用事业, note: "NextEra"}
+  - {symbol: SO, sector: 公用事业, note: "Southern"}
+  - {symbol: DUK, sector: 公用事业, note: "Duke"}
+  # ======== 材料 ========
+  - {symbol: NEM, sector: 贵金属, note: "纽蒙特"}
+  - {symbol: AEM, sector: 贵金属, note: "Agnico Eagle"}
+  - {symbol: B, sector: 贵金属, note: "Barrick"}
+  - {symbol: HL, sector: 贵金属, note: "Hecla 白银"}
+  - {symbol: FCX, sector: 工业金属, note: "自由港"}
+  - {symbol: NUE, sector: 工业金属, note: "纽柯钢铁"}
+  - {symbol: ALB, sector: 工业金属, note: "雅保 锂"}
+  - {symbol: MP, sector: 工业金属, note: "MP Materials 稀土"}
+  - {symbol: LIN, sector: 化工, note: "林德"}
+  - {symbol: APD, sector: 化工, note: "空气产品"}
+  - {symbol: DOW, sector: 化工, note: "陶氏"}
+  # ======== 地产 ========
+  - {symbol: EQIX, sector: REIT, note: "Equinix 数据中心"}
+  - {symbol: DLR, sector: REIT, note: "Digital Realty 数据中心"}
+  - {symbol: AMT, sector: REIT, note: "美国电塔"}
+  - {symbol: WELL, sector: REIT, note: "Welltower"}
+  - {symbol: PLD, sector: REIT, note: "Prologis"}
+  - {symbol: O, sector: REIT, note: "Realty Income"}
+  - {symbol: DHI, sector: 住宅, note: "霍顿"}
+  - {symbol: LEN, sector: 住宅, note: "莱纳"}
+  - {symbol: HD, sector: 住宅, note: "家得宝"}
+  - {symbol: LOW, sector: 住宅, note: "劳氏"}
+  - {symbol: SHW, sector: 住宅, note: "宣伟"}
+  # ======== 前沿 ========
+  - {symbol: RKLB, sector: 太空, note: "Rocket Lab"}
+  - {symbol: SPCX, sector: 太空, note: "SpaceX"}
+  - {symbol: ASTS, sector: 太空, note: "AST SpaceMobile"}
+  - {symbol: IONQ, sector: 量子, note: "IonQ"}
+  - {symbol: QBTS, sector: 量子, note: "D-Wave"}
+  - {symbol: RGTI, sector: 量子, note: "Rigetti"}

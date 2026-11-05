@@ -61,72 +61,66 @@ def window_stats(df: pd.DataFrame, cal: pd.DatetimeIndex) -> dict:
             "traded20": traded, "fails": fails}
 
 
-def _ticker_type(ticker: str) -> tuple[str | None, bool | None]:
-    try:
-        from .providers import polygon
-        r = polygon._get(f"/v3/reference/tickers/{polygon._sym(ticker)}").get("results") or {}
-        return r.get("type"), r.get("active")
-    except Exception:
-        return None, None
-
-
 def check(watchlist: list[dict], only: list[str] | None = None) -> dict:
     from .report import load_holdings
+    from .sectors import coverage
     holdings = set(load_holdings())
     cal = data.get_daily("SPY", "2y").index
-    rows = []
-    for item in watchlist:
-        t = item["symbol"]
-        if only and t not in only:
-            continue
-        held = t in holdings          # load_holdings() 在没有 holdings.txt 时才回退到 cost/pct 口径
-        row = {"ticker": t, "held": held}
-        try:
-            df = data.get_daily(t, "2y")
-        except Exception as e:
-            row.update({"error": f"取不到日线: {e}", "fails_new": ["5 取不到日线"],
-                        "remove_eligible": False})
-            rows.append(row)
-            continue
-        typ, active = _ticker_type(t)
-        now = window_stats(df, cal)
-        prev = window_stats(df, cal[:-5])
-        spl = find_splices(df)
-        a = float(atr(df).iloc[-1]) if len(df) > 15 else 0.0
-        valid_from = pd.Timestamp(spl[-1]["after"]) if spl else df.index[0]
-        valid_days = int((df.index >= valid_from).sum())
-
-        data_fails = []
-        if 20 - now["traded20"] > MAX_MISSING_20:
-            data_fails.append(f"5 近20日缺 {20 - now['traded20']} 天")
-        if not a > 0:
-            data_fails.append("5 ATR14 不可用")
-        if spl:
-            data_fails.append(f"5 日线拼接：{spl[-1]['before']}→{spl[-1]['after']} 价格 "
-                              f"{spl[-1]['close_before']}→{spl[-1]['close_after']}，"
-                              f"之前的历史是另一只证券（真实历史只有 {valid_days} 天）")
-        type_fails = []
-        if typ is not None and typ not in STOCK_TYPES:
-            type_fails.append(f"1 类型 {typ} 不是个股")
-        if active is False:
-            type_fails.append("1 Polygon 标记为已停止交易")
-
-        row.update({
-            "type": typ, "price": now["price"], "dvol20_m": now["dvol20_m"],
-            "atr_pct": round(a / now["price"] * 100, 1) if now["price"] > 0 else None,
-            "splices": spl, "valid_days": valid_days,
-            "fails_now": now["fails"], "fails_prev_week": prev["fails"],
-            "fails_new": type_fails + now["fails"] + data_fails,     # 新票入池用：必须为空
-            "data_issues": data_fails,
-            # 候选票剔除：本周和上周都不满足 2 或 3，或者类型/停牌问题
-            "remove_eligible": (not held) and (bool(now["fails"] and prev["fails"]) or bool(type_fails)),
-        })
-        rows.append(row)
+    pool = [i for i in watchlist if not only or i["symbol"] in only]
+    rows = data.pmap(lambda item: _check_one(item, holdings, cal), pool)
     return {
         "criteria": {"min_price": MIN_PRICE, "min_dvol20_m": MIN_DVOL / 1e6,
                      "max_missing_20": MAX_MISSING_20, "stock_types": sorted(STOCK_TYPES)},
         "as_of": str(cal[-1].date()),
         "remove_eligible": [r["ticker"] for r in rows if r.get("remove_eligible")],
         "data_issues": {r["ticker"]: r["data_issues"] for r in rows if r.get("data_issues")},
+        # 取不到证券类型不等于"是个股"：之前静默放过，ETF 就这样连续两周没被剔掉（Polygon 掉档后）
+        "type_unknown": [r["ticker"] for r in rows if not r.get("type")],
+        "failed": [r["ticker"] for r in rows if r.get("error")],
+        "coverage": None if only else coverage(watchlist),
         "rows": rows,
     }
+
+
+def _check_one(item: dict, holdings: set[str], cal: pd.DatetimeIndex) -> dict:
+    t = item["symbol"]
+    held = t in holdings          # load_holdings() 在没有 holdings.txt 时才回退到 cost/pct 口径
+    row = {"ticker": t, "held": held, "sector": item.get("sector")}
+    try:
+        df = data.get_daily(t, "2y")
+    except Exception as e:
+        row.update({"error": f"取不到日线: {e}", "fails_new": ["5 取不到日线"],
+                    "remove_eligible": False})
+        return row
+    typ = data.get_instrument_type(t)
+    now = window_stats(df, cal)
+    prev = window_stats(df, cal[:-5])
+    spl = find_splices(df)
+    a = float(atr(df).iloc[-1]) if len(df) > 15 else 0.0
+    valid_from = pd.Timestamp(spl[-1]["after"]) if spl else df.index[0]
+    valid_days = int((df.index >= valid_from).sum())
+
+    data_fails = []
+    if 20 - now["traded20"] > MAX_MISSING_20:
+        data_fails.append(f"5 近20日缺 {20 - now['traded20']} 天")
+    if not a > 0:
+        data_fails.append("5 ATR14 不可用")
+    if spl:
+        data_fails.append(f"5 日线拼接：{spl[-1]['before']}→{spl[-1]['after']} 价格 "
+                          f"{spl[-1]['close_before']}→{spl[-1]['close_after']}，"
+                          f"之前的历史是另一只证券（真实历史只有 {valid_days} 天）")
+    type_fails = []
+    if typ is not None and typ not in STOCK_TYPES:
+        type_fails.append(f"1 类型 {typ} 不是个股")
+
+    row.update({
+        "type": typ, "price": now["price"], "dvol20_m": now["dvol20_m"],
+        "atr_pct": round(a / now["price"] * 100, 1) if now["price"] > 0 else None,
+        "splices": spl, "valid_days": valid_days,
+        "fails_now": now["fails"], "fails_prev_week": prev["fails"],
+        "fails_new": type_fails + now["fails"] + data_fails,     # 新票入池用：必须为空
+        "data_issues": data_fails,
+        # 候选票剔除：本周和上周都不满足 2 或 3，或者不是个股
+        "remove_eligible": (not held) and (bool(now["fails"] and prev["fails"]) or bool(type_fails)),
+    })
+    return row

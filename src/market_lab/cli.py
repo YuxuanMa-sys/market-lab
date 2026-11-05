@@ -29,7 +29,8 @@ def main() -> None:
 
     sub.add_parser("exitbt", help="出场策略锦标赛：同一信号集上对比9种止盈/止损策略")
 
-    sub.add_parser("alerts", help="盘中检查：谁进入了进场参考区(供定时任务调用)")
+    p_al = sub.add_parser("alerts", help="盘中检查：谁这一小时新跌进低位(供定时任务调用)")
+    p_al.add_argument("--push", action="store_true", help="只输出推送原文；没有新进入低位的票就什么都不输出")
 
     p_ad = sub.add_parser("advise", help="单票模式化买卖建议(结合大盘状态和持仓)")
     p_ad.add_argument("ticker")
@@ -39,6 +40,10 @@ def main() -> None:
 
     p_hy = sub.add_parser("hygiene", help="周度维护的数据卫生检查：个股类型/价格/流动性/数据完整(不评价值不值得买)")
     p_hy.add_argument("tickers", nargs="*", help="只查这些票；新票不在 watchlist 里也可以查。不填=查整个 watchlist")
+
+    p_ev = sub.add_parser("events", help="硬事件扫描：谁被收购、破产、退市、停牌、改代码(周度维护用，约 4 分钟)")
+    p_ev.add_argument("tickers", nargs="*", help="只查这些票。不填=查整个 watchlist")
+    p_ev.add_argument("--days", type=int, default=10)
 
     args = ap.parse_args()
 
@@ -53,9 +58,8 @@ def main() -> None:
         print()
     elif args.cmd == "report":
         from .report import generate
-        html_path, json_path = generate(args.session)
-        print(f"HTML: {html_path}")
-        print(f"JSON: {json_path}")
+        for name, path in generate(args.session).items():
+            print(f"{name}: {path}")
     elif args.cmd == "advise":
         from .advice import advise, market_mode
         from .market import overview
@@ -117,11 +121,25 @@ def main() -> None:
             wl_all = wl_all + [{"symbol": t} for t in only if t not in known]
         json.dump(hygiene_check(wl_all, only), sys.stdout, ensure_ascii=False, indent=1, default=str)
         print()
-    elif args.cmd == "alerts":
-        from .alerts import check
+    elif args.cmd == "events":
+        from .events import scan as events_scan
         from .report import load_watchlist
-        json.dump(check(load_watchlist()), sys.stdout, ensure_ascii=False, indent=1)
+        tickers = [t.upper() for t in args.tickers] or [i["symbol"] for i in load_watchlist()]
+        json.dump(events_scan(tickers, days=args.days), sys.stdout, ensure_ascii=False, indent=1)
         print()
+    elif args.cmd == "alerts":
+        from .alerts import push_text, scan
+        from .report import load_watchlist
+        res = scan(load_watchlist())
+        if res["failed"]:
+            print(f"取数失败 {len(res['failed'])} 只: {' '.join(res['failed'])}", file=sys.stderr)
+        if args.push:
+            text = push_text(res["alerts"])
+            if text:
+                print(text)
+        else:
+            json.dump(res, sys.stdout, ensure_ascii=False, indent=1)
+            print()
     elif args.cmd == "levelbt":
         from pathlib import Path
         from datetime import date

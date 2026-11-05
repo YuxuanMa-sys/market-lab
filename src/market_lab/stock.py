@@ -235,6 +235,8 @@ def analyze(ticker: str, with_news: bool = True, with_short: bool = True) -> dic
         "trail_stop": trail_stop,
         "below_ma50_streak": int(below_streak),
         "chg_pct": round((price / prev - 1) * 100, 2),
+        "ret5": round((price / float(close.iloc[-6]) - 1) * 100, 2) if len(close) > 5 else None,
+        "ret20": round((price / float(close.iloc[-21]) - 1) * 100, 2) if len(close) > 20 else None,
         "atr": round(a, 2),
         "rsi": round(r, 1),
         "trend": trend,

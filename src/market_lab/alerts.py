@@ -3,17 +3,16 @@
 2026-10-17 起 check() 只做一件事：报告"今天盘中新进入低位"的自选股。用户自己看价格买、自己止损、自己卖，
 所以不再给进场区、止损、止盈。旧的进场区/持仓止损提醒保留为 check_trading()，需要时可切回。
 
-（以下为旧说明）盘中触发检查（轻量）：现价是否进入进场参考区。
-
-只做位置判断不做完整分析——抄底分依赖日线收盘，盘中给的是"到位提醒"，
-最终确认要等收盘后的报告。行情为15分钟延迟。
 """
 from __future__ import annotations
+
+import time
 
 import pandas as pd
 
 from . import data
 from .levels import build_zones, split_zones
+from .report import _tier
 from .sizing import CLUSTER_CAP_PCT, SUB_CLUSTER_CAP_PCT, _load_clusters
 from .stock import dip_score
 
@@ -152,74 +151,121 @@ def check_trading(watchlist: list[dict]) -> list[dict]:
 
 
 _RANK = {None: 0, "接近低位": 1, "低位": 2, "深度低位": 3}
+SUPPORT_MAX = 20            # dip_score 里"贴近强支撑"最多加这么多分
 
 
-def _price_hour_ago(ticker: str, minutes: int = 60) -> float | None:
-    """约一小时前的盘中价格（Polygon 分钟线）。用于判断"这一小时才刚跌进低位"，
-    避免同一只票整天每小时重复推送——云端每次运行都是全新副本，记不住上次推过什么。
-    盘中第一次检查（一小时前还没开盘）返回 None，此时与昨收比较。"""
-    try:
-        from datetime import datetime, timedelta
-        from zoneinfo import ZoneInfo
-        from .providers import polygon
-        now = datetime.now(ZoneInfo("America/New_York"))
-        j = polygon._get(f"/v2/aggs/ticker/{polygon._sym(ticker)}/range/1/minute/{now.date()}/{now.date()}",
-                         adjusted="true", sort="asc", limit=50000)
-        bars = j.get("results") or []
-        cut = (now - timedelta(minutes=minutes)).timestamp() * 1000
-        open_ms = now.replace(hour=9, minute=30, second=0, microsecond=0).timestamp() * 1000
-        if cut < open_ms:
-            return None
-        prior = [b for b in bars if open_ms <= b["t"] <= cut]
-        return float(prior[-1]["c"]) if prior else None
-    except Exception:
+def _price_minutes_ago(bars: list[tuple[int, float]], minutes: int = 60, now_ts: float | None = None) -> float | None:
+    """约 minutes 分钟前的价格。bars 是当天 5 分钟线 [(开始时间epoch秒, 收盘价), ...]。
+
+    那时还没开盘（盘中第一次检查）返回 None。
+    """
+    cut = (time.time() if now_ts is None else now_ts) - minutes * 60
+    prior = [c for t, c in bars if t <= cut]
+    return prior[-1] if prior else None
+
+
+def _earlier_check_lows(bars: list[tuple[int, float]], now_ts: float | None = None) -> list[float]:
+    """今天更早的每个小时检查点附近的最低价（由近到远）。云端任务实际触发有几分钟抖动，所以取检查点前后一段时间，
+    不然上一次刚提醒过的票，这次复算时价格差一点就落回档位线上方，会被当成"新进入"再推一遍。"""
+    if not bars:
+        return []
+    cut = (time.time() if now_ts is None else now_ts) - 3600
+    out = []
+    while cut + 300 >= bars[0][0]:
+        near = [c for t, c in bars if cut - 600 <= t <= cut + 300]
+        if near:
+            out.append(min(near))
+        cut -= 3600
+    return out
+
+
+def _check_one(item: dict, held: set[str]) -> dict | None:
+    t = item["symbol"]
+    df = data.get_daily(t, "2y")
+    q = data.get_intraday(t)
+    if not q or not q.get("last"):
+        raise ValueError("取不到现价")
+    last = float(q["last"])
+    # 不算支撑项就已经够不着低位的票，不用算支撑区（这是最耗 CPU 的一步，平常日子能省掉九成）
+    if _live_dip_estimate(df, last, [], 0) + SUPPORT_MAX < 55:
         return None
+    zones, tol = build_zones(df)
+    sup_now, _, _ = split_zones(zones, last)
+    est = _live_dip_estimate(df, last, sup_now, tol)
+    tier_now = _tier(est)
+    if _RANK[tier_now] < _RANK["低位"]:
+        return None
+    # 今天早些时候（每小时一个检查点）和昨收的最高档位。云端每次都是全新副本、记不住推过什么，所以用当天分钟线复算：
+    # 价格在档位线上下来回穿，同一只票也只在第一次跌进去时提醒（2026-11-04 回放：只比一小时前的话，ALAB、ETN、FIS 各推 3 次）。
+    bars = q.get("bars") or []
+    ref_close = float(df["Close"].iloc[-1])    # 日线只含已收盘的K线，最后一根就是昨天
+    best = dip_score(df, split_zones(zones, ref_close)[0], tol)["score"]
+    for p in _earlier_check_lows(bars):
+        best = max(best, _live_dip_estimate(df, p, split_zones(zones, p)[0], tol))
+    if _RANK[tier_now] <= _RANK[_tier(best)]:
+        return None
+    # 必须是跌进来的。"贴近强支撑"那 20 分会让价格涨上去时分数反而变高（实测 GOOG 当天 +4% 被判成新进入深度低位）
+    hour_ago = _price_minutes_ago(bars)
+    if last >= (ref_close if hour_ago is None else hour_ago):
+        return None
+    return {
+        "ticker": t, "kind": f"盘中进入{tier_now}", "tier": tier_now, "sector": item.get("sector"),
+        "last": round(last, 2), "chg_pct": round(q["chg_pct"], 2),
+        "dip_est": round(est, 0), "earlier_best": round(best, 0),
+        "held": t in held, "note": item.get("note", ""),
+    }
+
+
+def scan(watchlist: list[dict]) -> dict:
+    """盘中新进入低位（低位 = 抄底分≥55，深度低位 ≥70；与早晚报的低位清单同一口径）。
+
+    条件：盘中估分所在档位 ≥ 低位，高于昨收和今天早些时候的档位，且价格比一小时前（第一次检查时比昨收）低。
+    盘中估分把实时价当收盘价算（成交量用 20 日均量，看不到恐慌放量那 +10 分），所以要收盘确认。
+    返回 {"alerts": [...], "n_ok": 成功检查的只数, "failed": [取数失败的票]}。
+    """
+    from .report import load_holdings
+    held = set(load_holdings())
+    have = {i["symbol"] for i in watchlist}
+    items = watchlist + [{"symbol": t} for t in load_holdings() if t not in have]
+
+    def one(item):
+        try:
+            return item["symbol"], _check_one(item, held), None
+        except Exception as e:
+            return item["symbol"], None, str(e)
+
+    res = data.pmap(one, items)
+    alerts = [a for _, a, _ in res if a]
+    alerts.sort(key=lambda x: (not x["held"], -x["dip_est"]))
+    failed = [t for t, _, e in res if e]
+    return {"alerts": alerts, "n_ok": len(res) - len(failed), "failed": failed}
 
 
 def check(watchlist: list[dict]) -> list[dict]:
-    """盘中新进入低位（低位 = 抄底分≥55，深度低位 ≥70；与早晚报的低位清单同一口径）。
+    return scan(watchlist)["alerts"]
 
-    条件：盘中估分所在档位 ≥ 低位，且高于"一小时前"的档位（盘中第一次检查时与昨收比）。
-    盘中估分把实时价当收盘价算（成交量用 20 日均量，看不到恐慌放量那 +10 分），所以要收盘确认。
-    """
-    from .report import _tier, load_holdings
-    held = set(load_holdings())
-    have = {i["symbol"] for i in watchlist}
-    out = []
-    for item in watchlist + [{"symbol": t} for t in held if t not in have]:
-        t = item["symbol"]
-        try:
-            df = data.get_daily(t, "2y")
-            q = data.get_quote(t)
-            if not q or not q.get("last"):
-                continue
-            last = float(q["last"])
-            zones, tol = build_zones(df)
-            sup_now, _, _ = split_zones(zones, last)
-            est = _live_dip_estimate(df, last, sup_now, tol)
-            tier_now = _tier(est)
-            if _RANK[tier_now] < _RANK["低位"]:
-                continue
-            p1h = _price_hour_ago(t)
-            if p1h is None:            # 盘中第一次检查：与昨收比
-                ref_close = float(df["Close"].iloc[-1])
-                sup_ref, _, _ = split_zones(zones, ref_close)
-                ref_est = dip_score(df, sup_ref, tol)["score"]
-                ref_label = "昨收"
-            else:
-                sup_ref, _, _ = split_zones(zones, p1h)
-                ref_est = _live_dip_estimate(df, p1h, sup_ref, tol)
-                ref_label = "一小时前"
-            if _RANK[tier_now] <= _RANK[_tier(ref_est)]:
-                continue
-            chg = q.get("chg_pct")
-            out.append({
-                "ticker": t, "kind": f"盘中进入{tier_now}", "tier": tier_now,
-                "last": round(last, 2), "chg_pct": round(chg, 2) if chg is not None else None,
-                "dip_est": round(est, 0), "ref_est": round(ref_est, 0), "ref": ref_label,
-                "held": t in held, "note": item.get("note", ""),
-            })
-        except Exception:
-            continue
-    out.sort(key=lambda x: -x["dip_est"])
-    return out
+
+PUSH_DETAIL = 4         # 前几只写全（档位、涨跌、现价），其余只写代码、板块和分数
+PUSH_MAX = 300
+
+
+def push_text(alerts: list[dict]) -> str:
+    """盘中推送原文。没有新进入低位的票就返回空字符串（不推送）。"""
+    if not alerts:
+        return ""
+    lines = ["📉盘中新进入低位（盘中估分，收盘才确认）"]
+    for a in alerts[:PUSH_DETAIL]:
+        lines.append(f"{a['ticker']}{'★' if a['held'] else ''}[{a.get('sector') or '未分类'}] {a['tier']}{int(a['dip_est'])}"
+                     f" {a['chg_pct']:+.1f}% 现价{a['last']:g}")
+    rest = alerts[PUSH_DETAIL:]
+    if rest:
+        text = "\n".join(lines) + "\n另有 "
+        bits = []
+        for i, a in enumerate(rest):
+            bit = f"{a['ticker']}{'★' if a['held'] else ''}[{a.get('sector') or '未分类'}]{int(a['dip_est'])}"
+            if len(text) + sum(len(b) + 1 for b in bits) + len(bit) > PUSH_MAX - 6:
+                bits.append(f"+{len(rest) - i}只")
+                break
+            bits.append(bit)
+        lines.append("另有 " + " ".join(bits))
+    return "\n".join(lines)
