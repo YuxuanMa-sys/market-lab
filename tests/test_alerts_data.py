@@ -1,6 +1,7 @@
 """盘中提醒和数据层的回归测试（2026-11-04：Polygon 掉到免费档后暴露的问题）。"""
 import numpy as np
 import pandas as pd
+import pytest
 
 from market_lab import alerts, data
 
@@ -202,7 +203,7 @@ def test_push_text_format():
     assert alerts.push_text([]) == ("", [])
     text, shown = alerts.push_text(_alerts(40))
     lines = text.split("\n")
-    assert lines[0].startswith("📉盘中新进入低位") and lines[1] == "T0★[存储] 低位60 -5.2% 现价12.5"
+    assert lines[0].startswith("📉今天新进入低位") and lines[1] == "T0★[存储] 低位60 -5.2% 现价12.5"
     assert lines[5].startswith("另有 T4[存储]") and lines[5].endswith("只") and len(text) <= 200
     # 只有写出名字的票才算推过；+N只 下一小时接着推
     assert shown[:5] == ["T0", "T1", "T2", "T3", "T4"] and all(t in text for t in shown)
@@ -264,3 +265,68 @@ def test_instrument_type_mapping(monkeypatch):
     assert data.get_instrument_type("NVDA") == "CS"
     monkeypatch.setattr(data, "get_intraday", lambda t: {})
     assert data.get_instrument_type("XXXX") is None
+
+
+def test_daily_missing_latest_bar_counts_as_failed(monkeypatch):
+    """回归：日线缺最近一根时拿旧收盘算：涨 5% 的票被推成新进入低位，真跌的票反而漏掉。和盘后报告同一口径，算取数失败。"""
+    full = _df()
+    _crash(monkeypatch, full.iloc[:-1], [(-100, 70.0)])
+    with pytest.raises(ValueError, match="日线只到"):
+        alerts._check_one({"symbol": "VST"}, held=set(), sent={}, as_of=full.index[-1])
+    assert alerts._check_one({"symbol": "VST"}, held=set(), sent={}, as_of=full.index[-2]) is not None    # 不缺就照常
+
+
+def _quote(monkeypatch, df, last, prev):
+    monkeypatch.setattr(data, "get_daily", lambda t, period="2y": df)
+    monkeypatch.setattr(data, "get_intraday", lambda t: {"last": last, "prev_close": prev, "chg_pct": (last / prev - 1) * 100, "bars": []})
+
+
+def test_split_day_with_unadjusted_data_counts_as_failed(monkeypatch):
+    """回归：拆股当天日线和报价没调到同一口径，持仓票被推成深度低位，还带着 -86.8%。"""
+    df = _df()
+    close = float(df["Close"].iloc[-1])
+    for last, prev in ((close / 8, close / 8), (close / 8, close), (close * 8, close / 8)):
+        _quote(monkeypatch, df, last, prev)
+        with pytest.raises(ValueError, match="拆股"):
+            alerts._check_one({"symbol": "SNDK"}, held=set())
+    adjusted = df.copy()
+    adjusted[["Open", "High", "Low", "Close"]] /= 8
+    _quote(monkeypatch, adjusted, close / 8 * 0.7, close / 8)                  # 都调好了：照常
+    assert alerts._check_one({"symbol": "SNDK"}, held=set()) is not None
+
+
+def test_ex_dividend_prev_close_is_not_a_failure(monkeypatch):
+    """除息日 Yahoo 的 chartPreviousClose 减掉了分红（EQT 54.25→54.08），不能算日线对不上。"""
+    df = _df()
+    close = float(df["Close"].iloc[-1])
+    _quote(monkeypatch, df, close * 0.70, close * (1 - 0.0597))                # 观察池一年内最大一次分红 PGR 5.97%
+    assert alerts._check_one({"symbol": "PGR"}, held=set()) is not None
+
+
+def test_real_crash_is_not_mistaken_for_a_split(monkeypatch):
+    df = _df()
+    close = float(df["Close"].iloc[-1])
+    _quote(monkeypatch, df, close * 0.546, close)                              # 两年内观察池单日最大跌幅 RGTI -45.4%
+    assert alerts._check_one({"symbol": "RGTI"}, held=set()) is not None
+
+
+def test_ticker_with_no_bar_today_is_not_an_alert(monkeypatch):
+    """回归：休市日 SPY 取不到时照常检查，日线收盘是 float32（76.9000015），报价是 76.9，比昨收"低"，上一交易日的跌幅被推成新进入低位。"""
+    _crash(monkeypatch, _df(), [(-100, 70.0)])
+    assert alerts._check_one({"symbol": "IBKR"}, held=set()) is not None
+    _crash(monkeypatch, _df(), [(-90_000, 70.0)])
+    assert alerts._check_one({"symbol": "IBKR"}, held=set()) is None
+
+
+def test_lower_tier_unnamed_an_hour_ago_is_not_hidden_by_a_higher_score_now(monkeypatch):
+    """回归：一小时前估分 62（低位）没写出名字，现在 75 反而被挡；现在要是还是 62 就会推。2026-10-30 COIN 跌 10.6%，全天没写出名字。"""
+    monkeypatch.setattr(alerts, "dip_score", lambda d, sup, tol: {"score": 30.0})
+    now = 2_000_000_000
+    monkeypatch.setattr(alerts.time, "time", lambda: now)
+    monkeypatch.setattr(data, "get_daily", lambda t, period="2y": _df())
+    monkeypatch.setattr(data, "get_intraday", lambda t: {"last": 91.0, "prev_close": 100.0, "chg_pct": -9.0, "bars": [(now - 3700, 85.0), (now - 100, 90.5)]})
+    monkeypatch.setattr(alerts, "_live_dip_estimate", lambda d, p, sup, tol, hi=None, lo=None: 75.0 if p >= 90 else 62.0)
+    assert alerts._check_one({"symbol": "COIN"}, held=set(), sent={})["tier"] == "深度低位"
+    assert alerts._check_one({"symbol": "COIN"}, held=set(), sent={"COIN": "低位"}) is None       # 低位推过了，深度是涨上来才有的
+    monkeypatch.setattr(alerts, "_live_dip_estimate", lambda d, p, sup, tol, hi=None, lo=None: 63.0 if p >= 90 else 43.0)
+    assert alerts._check_one({"symbol": "GOOG"}, held=set(), sent={}) is None                      # 一小时前够不上：还是拦

@@ -47,6 +47,7 @@ def main() -> None:
     p_ev = sub.add_parser("events", help="硬事件扫描：谁被收购、破产、退市、停牌、改代码(周度维护用，约 4 分钟)")
     p_ev.add_argument("tickers", nargs="*", help="只查这些票。不填=查整个 watchlist")
     p_ev.add_argument("--days", type=int, default=10)
+    p_ev.add_argument("--candidates", action="store_true", help="查入池候选：标题不要求提到公司名，默认往回看 365 天")
 
     args = ap.parse_args()
 
@@ -134,7 +135,8 @@ def main() -> None:
         from .events import scan as events_scan
         from .report import load_watchlist
         tickers = [t.upper() for t in args.tickers] or [i["symbol"] for i in load_watchlist()]
-        json.dump(events_scan(tickers, days=args.days), sys.stdout, ensure_ascii=False, indent=1)
+        days = 365 if args.candidates and args.days == 10 else args.days
+        json.dump(events_scan(tickers, days=days, candidates=args.candidates), sys.stdout, ensure_ascii=False, indent=1)
         print()
     elif args.cmd == "alerts":
         from . import alertstate

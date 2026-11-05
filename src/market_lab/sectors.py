@@ -62,13 +62,15 @@ def _stats(rows: list[dict], spy_chg) -> dict:
     }
 
 
-def etf_changes(tax: dict | None = None) -> dict[str, float]:
+def etf_changes(tax: dict | None = None, as_of: str | None = None) -> dict[str, float]:
     """参照 ETF 最近一个交易日的涨跌幅。取不到的就不写。"""
     tax = load_taxonomy() if tax is None else tax
 
     def one(etf):
         try:
             c = data.get_daily(etf, "2y")["Close"]
+            if as_of and c.index[-1].date().isoformat() < as_of:     # 缺最近一根：涨跌幅是旧的，不写
+                return etf, None
             return etf, round((float(c.iloc[-1]) / float(c.iloc[-2]) - 1) * 100, 2)
         except Exception:
             return etf, None

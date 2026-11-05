@@ -57,3 +57,22 @@ def test_unknown_type_blocks_new_entry_but_does_not_remove(monkeypatch):
     assert r["fails_new"] == ["1 类型 ETF 不是个股"] and r["remove_eligible"] is True
     monkeypatch.setattr(data, "get_instrument_type", lambda t: "CS")
     assert hygiene._check_one({"symbol": "NVDA"}, set(), cal)["fails_new"] == []
+
+
+def test_not_found_is_separate_from_a_failed_fetch(monkeypatch):
+    """回归：退市的票（HES）和一次限流输出一样，周度任务永远剔不掉，还算进覆盖。"""
+    cal = pd.bdate_range("2026-09-01", periods=30)
+    good = _df(cal, [100.0] * 30, [1e7] * 30)
+    def fake_daily(t, period="2y"):
+        if t == "DEAD":
+            raise data.SymbolNotFound("Yahoo 没有 DEAD")
+        if t == "BUSY":
+            raise ValueError("取不到 BUSY 的日线")
+        return good
+    monkeypatch.setattr(data, "get_daily", fake_daily)
+    monkeypatch.setattr(data, "get_instrument_type", lambda t: "CS")
+    wl = [{"symbol": "AAA", "sector": "油气"}, {"symbol": "DEAD", "sector": "油气"}, {"symbol": "BUSY", "sector": "油气"}]
+    res = hygiene.check(wl)
+    assert res["not_found"] == ["DEAD"]
+    assert set(res["failed"]) == {"DEAD", "BUSY"}
+    assert res["coverage"]["counts"]["油气"] == 2       # DEAD 不算，BUSY 只是这次没查成

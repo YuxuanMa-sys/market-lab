@@ -172,7 +172,8 @@ def pick_why(session: str, high_list: list[dict], low_list: list[dict], summary:
 
 def brief_md(session: str, high_list: list[dict], high_ctx: dict, low_list: list[dict], low_ctx: dict,
              summary: dict | None, why: dict, why_news: dict | None = None,
-             as_of: str | None = None, stale: bool = False, failed: list[str] | None = None) -> str:
+             as_of: str | None = None, stale: bool = False, failed: list[str] | None = None,
+             warnings: list[str] | None = None) -> str:
     post = session == "postmarket"
     day = day_label(session, stale)
     out: list[str] = []
@@ -182,6 +183,7 @@ def brief_md(session: str, high_list: list[dict], high_ctx: dict, low_list: list
     if failed:
         names = " ".join(failed[:30]) + (" …" if len(failed) > 30 else "")
         out.append(f"⚠ 观察池 {len(failed)} 只取数失败，下面的清单和板块数字不全：{names}")
+    out.extend(f"⚠ {w}" for w in warnings or [])
 
     # ---- 持仓高位 ----
     out.append("【持仓高位】")
@@ -198,7 +200,7 @@ def brief_md(session: str, high_list: list[dict], high_ctx: dict, low_list: list
             flags += f"📅{r['earnings']}"
         why_txt = f" | <<为什么涨:{r['ticker']}>>" if r["ticker"] in why["up"] else ""
         out.append(f"{r['ticker']}{_tag(r.get('sector'))} {r['tier']} {r['score']}（上一日 {'-' if r.get('prev_score') is None else r['prev_score']}）{flags}"
-                   f" | {day}{_pct(r.get('chg_pct'))} | 20日涨幅{_pct(r.get('runup20_pct'))}"
+                   f" | {day}{_pct(r.get('chg_pct'))} | 距20日低点{_pct(r.get('runup20_pct'))}"
                    f" | 距52周高{_pct(r.get('dist52h_pct'))} | {'；'.join(r.get('reasons') or [])}{why_txt}")
         out.extend(f"   · {n}" for n in r.get("notes") or [])
     if quiet:
@@ -240,7 +242,10 @@ def brief_md(session: str, high_list: list[dict], high_ctx: dict, low_list: list
             by.setdefault(r.get("sector") or "未分类", []).append(f"{r['ticker']} {int(r['dip'])}")
         out.append("其余低位（55-69）按细分：" + "；".join(f"{k}：{' '.join(v)}" for k, v in by.items()))
     if near:
-        out.append("接近低位：" + " ".join(r["ticker"] for r in near))
+        out.append("接近低位：" + " ".join(r["ticker"] + ("★" if r.get("held") else "") for r in near))
+
+    if any("📅" in line for line in out):
+        out.append("📅 是财报日，来自 Finnhub，部分是估算（2026-11-05：MRVL 落在感恩节），以公司公告为准。")
 
     # ---- 大盘 ----
     out.append("")

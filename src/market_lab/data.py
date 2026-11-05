@@ -27,6 +27,10 @@ _BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT
 _PERIOD_DAYS = {"6mo": 183, "1y": 365, "2y": 730, "5y": 1825}
 
 
+class SymbolNotFound(LookupError):
+    """Yahoo 明确说没有这个代码（已退市、改代码）。和限流、网络错分开：后者只是这次没查成。"""
+
+
 def _yahoo_get(ticker: str, params: dict) -> dict:
     """Yahoo chart 接口，返回 result[0]。限流/5xx 换主机重试；代码不存在直接报错不重试。"""
     err: Exception | None = None
@@ -37,14 +41,14 @@ def _yahoo_get(ticker: str, params: dict) -> dict:
             r = requests.get(f"https://{host}.finance.yahoo.com/v8/finance/chart/{_urlquote(ticker)}",
                              params=params, headers={"User-Agent": _BROWSER_UA}, timeout=20)
             if r.status_code == 404:
-                raise LookupError(f"Yahoo 没有 {ticker}")
+                raise SymbolNotFound(f"Yahoo 没有 {ticker}")
             if r.status_code == 429 or r.status_code >= 500:
                 err = RuntimeError(f"Yahoo {r.status_code}")
                 continue
             r.raise_for_status()
             result = (r.json().get("chart") or {}).get("result")
             if not result:
-                raise LookupError(f"Yahoo 没有 {ticker}")
+                raise SymbolNotFound(f"Yahoo 没有 {ticker}")
             return result[0]
         except requests.RequestException as e:
             err = e
@@ -58,6 +62,8 @@ def _yahoo_chart(ticker: str, days: int) -> dict:
 
 def _yahoo_direct_daily(ticker: str, period: str = "2y") -> pd.DataFrame:
     j = _yahoo_chart(ticker, _PERIOD_DAYS.get(period, 730))
+    if not j.get("timestamp"):      # 退市后 Yahoo 有时还回 200，只是没有K线（K、CMA）
+        raise SymbolNotFound(f"Yahoo 没有 {ticker} 的K线")
     q = j["indicators"]["quote"][0]
     df = pd.DataFrame(
         {"Open": q["open"], "High": q["high"], "Low": q["low"], "Close": q["close"], "Volume": q["volume"]},
@@ -160,12 +166,15 @@ def get_daily(ticker: str, period: str = "2y") -> pd.DataFrame:
     if df is None:
         try:
             df = _yahoo_direct_daily(ticker, period)
-        except Exception:
+        except Exception as e:
             # auto_adjust=False = 仅拆分复权，与上面两个来源口径一致；
             # 否则降级切换时高分红票的历史位置会整体漂移
-            h = yf.Ticker(ticker).history(period=period, auto_adjust=False)
-            if h.empty:
-                raise ValueError(f"取不到 {ticker} 的日线")
+            try:
+                h = yf.Ticker(ticker).history(period=period, auto_adjust=False)
+            except Exception:       # yfinance 自己被限流时不能盖掉"代码不存在"
+                h = None
+            if h is None or h.empty:
+                raise (e if isinstance(e, SymbolNotFound) else ValueError(f"取不到 {ticker} 的日线"))
             df = h[["Open", "High", "Low", "Close", "Volume"]].copy()
             df.index = df.index.tz_localize(None)
     df = _drop_partial_bar(df)
@@ -400,18 +409,20 @@ def get_option_walls(ticker: str, price: float) -> dict | None:
     return w
 
 
-def get_earnings_calendar(days: int = 14) -> list[dict]:
-    """未来 N 天财报日历（Finnhub）。没配 key 时返回空列表。"""
+def get_earnings_calendar(days: int = 14, problems: list[str] | None = None) -> list[dict]:
+    """未来 N 天财报日历（Finnhub）。没配 key 时返回空列表。没查全的部分写进 problems，报告要说出来。"""
     if not os.environ.get("FINNHUB_API_KEY"):
         return []
     try:
         from .providers import finnhub
-        return finnhub.earnings_calendar(days)
-    except Exception:
+        return finnhub.earnings_calendar(days, problems)
+    except Exception as e:
+        if problems is not None:
+            problems.append(f"日历取数失败: {e}")
         return []
 
 
-def get_next_earnings(ticker: str, days: int = 45) -> str | None:
+def get_next_earnings(ticker: str, days: int = 45, problems: list[str] | None = None) -> str | None:
     """按代码单独查下一次财报日。批量日历查不到的票用（见 watchlist.yaml 的 earnings_lookup）。"""
     if not os.environ.get("FINNHUB_API_KEY"):
         return None
@@ -419,4 +430,6 @@ def get_next_earnings(ticker: str, days: int = 45) -> str | None:
         from .providers import finnhub
         return finnhub.next_earnings(ticker, days)
     except Exception:
+        if problems is not None:
+            problems.append(f"{ticker} 单独查询失败")
         return None

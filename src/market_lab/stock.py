@@ -21,6 +21,8 @@ def dip_score(df: pd.DataFrame, supports: list, tol: float) -> dict:
 
     这不是买入信号，是把"这跌得够不够狠、位置好不好"量化出来。
     """
+    if len(df) < HIGH_MIN_BARS:     # 和高位分同一门槛：历史不够时 RSI 和 20 日回撤都不可信，不进低位清单
+        return {"score": 0.0, "band": "数据不足", "reasons": [f"只有 {len(df)} 根日线，至少需要 {HIGH_MIN_BARS} 根"]}
     close = df["Close"]
     price = float(close.iloc[-1])
     a = float(atr(df).iloc[-1])
@@ -170,9 +172,16 @@ def high_score(df: pd.DataFrame) -> dict:
     return {"score": score, "band": high_band(score), "reasons": reasons, "facts": facts}
 
 
+SPLIT_GAP = 0.5         # 单日收盘低于前一天这个比例，当成拆股没调整。观察池两年 11 万根日线最大单日跌幅是 -45.4%（RGTI）
+
+
 def analyze(ticker: str, with_news: bool = True, with_short: bool = True) -> dict:
     df = data.get_daily(ticker, period="2y")
     close = df["Close"]
+    # 拆股后 Yahoo 可能过几天才把历史价调好（SNDK 2026-11-19 一拆八）：不拦的话看起来是跌了 87%，持仓票会进深度低位，20 日内的分数都不对
+    gap = (close / close.shift(1)).tail(20)
+    if (gap < SPLIT_GAP).any():
+        raise ValueError(f"{gap.idxmin().date()} 收盘不到前一天的一半，多半是拆股还没调整")
     price = float(close.iloc[-1])
     prev = float(close.iloc[-2])
     a = float(atr(df).iloc[-1])

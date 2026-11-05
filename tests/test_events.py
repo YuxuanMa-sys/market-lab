@@ -92,3 +92,16 @@ def test_scan_reports_unknown_names_and_partial_coverage(monkeypatch):
     assert res["hits"] == {"LITE": ["Marvell to buy Lumentum"]}
     assert res["name_unknown"] == ["NONAME", "BAD"] and res["failed"] == ["BAD"]
     assert res["partial"] == {"NVDA": 1.4} and res["scanned"] == 3
+
+
+def test_candidate_mode_shows_deals_named_differently(monkeypatch):
+    """回归：入池检查放过了 DoorDash 收购 Instacart（Yahoo 叫 Maplebear，标题不提这个名字）。"""
+    import os
+    from market_lab import data
+    from market_lab.providers import finnhub
+    monkeypatch.setitem(os.environ, "FINNHUB_API_KEY", "x")
+    titles = ["DoorDash to acquire Instacart for $17 billion", "Too Late to Buy Instacart?", "Maplebear Q3 revenue rises"]
+    monkeypatch.setattr(finnhub, "company_news_all", lambda t, days=10: ([{"title": x} for x in titles], None))
+    monkeypatch.setattr(data, "get_company_name", lambda t: "Maplebear Inc.")
+    assert events.scan(["CART"])["hits"] == {}
+    assert events.scan(["CART"], candidates=True)["hits"] == {"CART": ["DoorDash to acquire Instacart for $17 billion"]}

@@ -68,6 +68,7 @@ def check(watchlist: list[dict], only: list[str] | None = None) -> dict:
     cal = data.get_daily("SPY", "2y").index
     pool = [i for i in watchlist if not only or i["symbol"] in only]
     rows = data.pmap(lambda item: _check_one(item, holdings, cal), pool)
+    not_found = [r["ticker"] for r in rows if r.get("not_found")]
     return {
         "criteria": {"min_price": MIN_PRICE, "min_dvol20_m": MIN_DVOL / 1e6,
                      "max_missing_20": MAX_MISSING_20, "stock_types": sorted(STOCK_TYPES)},
@@ -77,7 +78,8 @@ def check(watchlist: list[dict], only: list[str] | None = None) -> dict:
         # 取不到证券类型不等于"是个股"：之前静默放过，ETF 就这样连续两周没被剔掉（Polygon 掉档后）
         "type_unknown": [r["ticker"] for r in rows if not r.get("type")],
         "failed": [r["ticker"] for r in rows if r.get("error")],
-        "coverage": None if only else coverage(watchlist),
+        "not_found": not_found,     # Yahoo 明确说没有这个代码：多半已退市或改代码，不算覆盖。failed 里其余的只是这次没查成
+        "coverage": None if only else coverage([i for i in watchlist if i["symbol"] not in not_found]),
         "rows": rows,
     }
 
@@ -90,7 +92,7 @@ def _check_one(item: dict, holdings: set[str], cal: pd.DatetimeIndex) -> dict:
         df = data.get_daily(t, "2y")
     except Exception as e:
         row.update({"error": f"取不到日线: {e}", "fails_new": ["5 取不到日线"],
-                    "remove_eligible": False})
+                    "remove_eligible": False, "not_found": isinstance(e, data.SymbolNotFound)})
         return row
     typ = data.get_instrument_type(t)
     now = window_stats(df, cal)

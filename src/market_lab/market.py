@@ -48,8 +48,10 @@ def breadth() -> dict:
     }
 
 
-def vix_context() -> dict:
+def vix_context(as_of=None) -> dict:
     df = data.get_daily("^VIX", period="2y")
+    if as_of is not None and df.index[-1] < as_of:
+        raise ValueError("VIX 缺最近一根日线")   # 由 overview 当成取数失败，不把旧值当今天的
     close = df["Close"]
     v = float(close.iloc[-1])
     pct_rank = float((close < v).mean() * 100)
@@ -80,6 +82,8 @@ def regime(spy_analysis: dict, vix: dict, br: dict) -> dict:
         label, desc = "空头", "标普在200日均线之下，趋势偏空，反弹按反弹对待"
     else:
         label, desc = "震荡", "趋势信号混杂，区间思路，重点看关键位的争夺"
+    if "value" not in vix:
+        desc += "（VIX 取数失败，这里没有用到真实 VIX）"
     return {"label": label, "desc": desc}
 
 
@@ -88,6 +92,8 @@ def market_dip_gauge(spy_df_close, vix: dict, br: dict) -> dict:
     score = 0.0
     reasons = []
     v, pct = vix.get("value"), vix.get("percentile_2y", 0)
+    if v is None:
+        reasons.append("VIX 取数失败，VIX 项没计分")
     if pct >= 90:
         score += 35; reasons.append(f"VIX {v} 处于2年 {pct:.0f}% 分位，极端恐慌")
     elif pct >= 75:
@@ -178,11 +184,12 @@ def overview(session: str = "premarket") -> dict:
 
     # VIX 和 QQQ 只是大盘附注，取不到不该让整份报告失败。SPY 不一样：取不到说明数据源整个挂了，报错由云端任务推送告知。
     try:
-        vix = vix_context()
+        vix = vix_context(spy_df.index[-1])
     except Exception:
         vix = {}
     try:
-        qqq = index_levels(data.get_daily("QQQ", period="2y"))
+        qqq_df = data.get_daily("QQQ", period="2y")
+        qqq = index_levels(qqq_df) if qqq_df.index[-1] >= spy_df.index[-1] else None
     except Exception:
         qqq = None
     br = breadth()

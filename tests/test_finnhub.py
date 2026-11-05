@@ -102,4 +102,51 @@ def test_news_reports_coverage_when_it_cannot_finish(monkeypatch):
     monkeypatch.setattr(finnhub, "_get", fake)
     monkeypatch.setattr(finnhub, "NEWS_MAX_PAGES", 3)
     items, covered = finnhub.company_news_all("NVDA", days=10)
-    assert len(items) == 750 and covered is not None and covered < 10
+    assert len(items) == 750 and covered["days"] < 10 and len(covered["cut_days"]) == 3
+
+
+def test_calendar_problems_reach_the_caller(monkeypatch):
+    """回归：日历 429 时简报和 data 行都不提，📅 全部消失却看起来一切正常。"""
+    from market_lab import data
+    monkeypatch.setenv("FINNHUB_API_KEY", "x")
+    def boom(path, **p):
+        raise RuntimeError("429")
+    monkeypatch.setattr(finnhub, "_get", boom)
+    problems = []
+    assert data.get_earnings_calendar(6, problems) == []
+    assert problems and "取数失败" in problems[0]
+    problems = []
+    assert data.get_next_earnings("B", 45, problems) is None
+    assert problems == ["B 单独查询失败"]
+class _Resp:
+    def __init__(self, code, reset=None):
+        self.status_code, self.headers = code, ({"X-Ratelimit-Reset": str(reset)} if reset else {})
+    def json(self):
+        return {"ok": True}
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise finnhub.requests.HTTPError(str(self.status_code))
+
+
+def test_429_waits_for_window_reset_then_stops_waiting(monkeypatch):
+    """回归：另一个客户端占了窗口时，等 5 秒重试一次还是 429，窗口重置前每只票都算没扫成。"""
+    monkeypatch.setenv("FINNHUB_API_KEY", "x")
+    monkeypatch.setattr(finnhub, "_last_call", 0.0)
+    monkeypatch.setattr(finnhub, "_wait_left", 50.0)
+    slept = []
+    monkeypatch.setattr(finnhub.time, "sleep", slept.append)
+    now = finnhub.time.time()
+    answers = [_Resp(429, int(now) + 30), _Resp(200)]
+    monkeypatch.setattr(finnhub.requests, "get", lambda *a, **k: answers.pop(0))
+    assert finnhub._get("x") == {"ok": True}
+    assert any(25 < x <= 32 for x in slept)
+    # 等待额度用完：不再等，直接算失败
+    monkeypatch.setattr(finnhub, "_wait_left", 0.0)
+    slept.clear()
+    answers[:] = [_Resp(429, int(now) + 30)]
+    try:
+        finnhub._get("x")
+        raise AssertionError("应该抛错")
+    except finnhub.requests.HTTPError:
+        pass
+    assert all(x < 2 for x in slept)

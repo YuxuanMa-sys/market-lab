@@ -14,10 +14,19 @@ MIN_INTERVAL = 1.05     # 免费档 60 次/分钟。观察池上百只票时必�
 
 _lock = threading.Lock()
 _last_call = 0.0
+_wait_left = 240.0      # 整个进程最多为 429 等这么久。一直 429 时也要在 Bash 上限 590 秒内跑完，把没扫成的票写出来
+
+
+def _reset_wait(r: requests.Response) -> float:
+    """60 秒窗口用完了，等 5 秒没用，要等到窗口重置（X-Ratelimit-Reset，2026-11-05 实测 429 响应里也有）。"""
+    try:
+        return min(61.0, max(1.0, float(r.headers["X-Ratelimit-Reset"]) - time.time() + 1))
+    except (KeyError, ValueError):
+        return 5.0
 
 
 def _get(path: str, **params) -> dict | list:
-    global _last_call
+    global _last_call, _wait_left
     params["token"] = os.environ["FINNHUB_API_KEY"]
     for attempt in range(2):
         with _lock:
@@ -26,13 +35,13 @@ def _get(path: str, **params) -> dict | list:
                 time.sleep(wait)
             _last_call = time.monotonic()
         r = requests.get(f"{BASE}/{path}", params=params, timeout=15)
-        if r.status_code == 429 and attempt == 0:
-            time.sleep(5)
+        if r.status_code == 429 and attempt == 0 and _wait_left > 0:
+            wait = _reset_wait(r)
+            _wait_left -= wait
+            time.sleep(wait)
             continue
         r.raise_for_status()
         return r.json()
-    r.raise_for_status()
-    return r.json()
 
 
 CAL_ROW_CAP = 1500      # Finnhub 单次响应的硬上限（实测）
@@ -41,7 +50,7 @@ NEWS_PAGE_CAP = 230     # company-news 单次最多约 250 条，新的在前（
 NEWS_MAX_PAGES = 12
 
 
-def earnings_calendar(days: int = 14) -> list[dict]:
+def earnings_calendar(days: int = 14, problems: list[str] | None = None) -> list[dict]:
     """未来 N 天财报日历，按 CAL_CHUNK_DAYS 分片抓取后合并。
 
     为什么必须分片：Finnhub 的响应在 1500 条封顶，而且**不按日期排序**——
@@ -53,7 +62,7 @@ def earnings_calendar(days: int = 14) -> list[dict]:
     today = date.today()
     seen: set[tuple] = set()
     out: list[dict] = []
-    problems: list[str] = []
+    problems = [] if problems is None else problems
 
     def fetch(d0: date, d1: date) -> None:
         try:
@@ -123,8 +132,8 @@ def company_news(symbol: str, days: int = 7, limit: int = 8) -> list[dict]:
     return [_news_item(it) for it in items[:limit]]
 
 
-def company_news_all(symbol: str, days: int = 10) -> tuple[list[dict], float | None]:
-    """这段时间的全部标题。返回 (新闻, 没覆盖全时实际覆盖的天数；覆盖全了是 None)。
+def company_news_all(symbol: str, days: int = 10) -> tuple[list[dict], dict | None]:
+    """这段时间的全部标题。返回 (新闻, 没覆盖全时 {"days": 最早取到距今几天, "cut_days": 一天就超过上限、当天没取全的日子}；覆盖全了是 None)。
 
     单次最多约 250 条：财报季 NVDA 只够 1.4 天、MRVL 6.5 天，所以条数接近上限时往回翻页。
     """
@@ -135,6 +144,7 @@ def company_news_all(symbol: str, days: int = 10) -> tuple[list[dict], float | N
     out: list[dict] = []
     earliest = now.timestamp()
     gap = False
+    cut_days: list[str] = []
     for _ in range(NEWS_MAX_PAGES):
         page = _get("company-news", symbol=symbol.replace("-", "."), **{"from": start.isoformat(), "to": to.isoformat()})
         for it in page:
@@ -151,13 +161,14 @@ def company_news_all(symbol: str, days: int = 10) -> tuple[list[dict], float | N
             break
         if first_day >= to:      # 一天就超过上限，这一天取不全，只能跳到前一天
             gap = True
+            cut_days.append(to.isoformat())
             if to == start:
                 break
             first_day = to - timedelta(days=1)
         to = first_day           # 这一页最早的那天可能也没取全，所以从这一天接着翻，靠去重
     else:
         gap = True
-    return out, (round((now.timestamp() - earliest) / 86400, 1) if gap else None)
+    return out, ({"days": round((now.timestamp() - earliest) / 86400, 1), "cut_days": cut_days} if gap else None)
 
 
 def general_news(limit: int = 10) -> list[dict]:

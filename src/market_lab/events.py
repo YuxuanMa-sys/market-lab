@@ -77,9 +77,17 @@ def is_hit(title: str, ticker: str, key: str) -> bool:
     return bool(name and re.search(_BUY_RE + rf".*?(?:{name})" + _NOT_COMPANY, low))
 
 
-def scan(tickers: list[str], days: int = 10) -> dict:
+def is_event_title(title: str) -> bool:
+    """同样的事件词，但不要求标题提到公司名。查入池候选用：Yahoo 叫 Maplebear，标题都写 Instacart；条数少，模型逐条看得过来。"""
+    low = _squash(title).lower()
+    if any(w in low for w in EVENT_WORDS) or re.search(_EVENT_RE, low):
+        return True
+    return not any(w in low for w in _NOT_DEAL) and re.search(_BUY_RE, low) is not None
+
+
+def scan(tickers: list[str], days: int = 10, candidates: bool = False) -> dict:
     """返回 {"scanned": 成功扫到的只数, "no_news": 这段时间没有新闻的票, "failed": 请求失败的票,
-    "name_unknown": 取不到公司名的票（只能靠标题里的代码匹配，会漏）, "partial": {新闻太多没翻完的票: 实际覆盖天数},
+    "name_unknown": 取不到公司名的票（只能靠标题里的代码匹配，会漏）, "partial": {新闻太多没翻完的票: {"days": 最早取到距今几天, "cut_days": 当天没取全的日子}},
     "hits": {票: [标题...]}}。
 
     Finnhub 免费档每秒一次，两百多只票要 5 分钟左右（新闻多的票要翻页）。
@@ -90,7 +98,7 @@ def scan(tickers: list[str], days: int = 10) -> dict:
     from .providers import finnhub
     names = dict(data.pmap(lambda t: (t, data.get_company_name(t)), tickers))
     hits: dict[str, list[str]] = {}
-    partial: dict[str, float] = {}
+    partial: dict[str, dict] = {}
     no_news, failed = [], []
     scanned = 0
     for t in tickers:
@@ -106,7 +114,10 @@ def scan(tickers: list[str], days: int = 10) -> dict:
             partial[t] = covered
         key = company_key(names.get(t))
         found = list(dict.fromkeys(n["title"] for n in items if is_hit(n.get("title", ""), t, key)))
+        if candidates:      # 提到公司名的排前面，其余的也给模型看
+            found = (found[:6] + [x for x in dict.fromkeys(n["title"] for n in items if is_event_title(n.get("title", "")))
+                                  if x not in found])[:18]
         if found:
-            hits[t] = found[:6]
+            hits[t] = found if candidates else found[:6]
     return {"scanned": scanned, "no_news": no_news, "failed": failed,
             "name_unknown": [t for t in tickers if not names.get(t)], "partial": partial, "hits": hits}

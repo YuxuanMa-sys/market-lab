@@ -169,15 +169,26 @@ def _price_minutes_ago(bars: list[tuple[int, float]], minutes: int = 60, now_ts:
     return prior[-1] if prior else None
 
 
-def _check_one(item: dict, held: set[str], sent: dict[str, str] | None = None) -> dict | None:
+def _check_one(item: dict, held: set[str], sent: dict[str, str] | None = None, as_of: pd.Timestamp | None = None) -> dict | None:
     t = item["symbol"]
     # 比的是昨收：美东 16:20 之后日线已经带上今天，这里切掉，不然今天会算两遍
     df = data.get_daily(t, "2y")
     df = df[df.index < pd.Timestamp(data._now_ct().date())]
+    # 日线缺最近一根：昨收和分数都是旧的，和盘后报告同一口径，算取数失败
+    if as_of is not None and df.index[-1] < as_of:
+        raise ValueError(f"日线只到 {df.index[-1].date()}")
     q = data.get_intraday(t)
     if not q or not q.get("last"):
         raise ValueError("取不到现价")
     last = float(q["last"])
+    # 这只票今天还没有成交（休市日 SPY 又没取到，或者停牌）：现价就是上一个交易日的收盘，涨跌幅也是那天的，没有新信息
+    bars = q.get("bars") or []
+    if bars and datetime.fromtimestamp(bars[-1][0], data.MARKET_TZ).date() != datetime.fromtimestamp(time.time(), data.MARKET_TZ).date():
+        return None
+    # 拆股当天日线和报价可能还没调到同一口径。容差不能小：除息日 chartPreviousClose 会减掉分红（2026-11-04 EQT、BRO、MUSA 实测，观察池一年有 208 次分红超过 0.5%）
+    ref_close = float(df["Close"].iloc[-1])
+    if not 0.85 < float(q.get("prev_close") or ref_close) / ref_close < 1.15 or last < ref_close * 0.5:
+        raise ValueError("日线和报价对不上（拆股？）")
     hi, lo = q.get("day_high"), q.get("day_low")
     # 不算支撑项就已经够不着低位的票，不用算支撑区（这是最耗 CPU 的一步，平常日子能省掉九成）
     if _live_dip_estimate(df, last, [], 0, hi, lo) + SUPPORT_MAX < 55:
@@ -189,9 +200,9 @@ def _check_one(item: dict, held: set[str], sent: dict[str, str] | None = None) -
     if _RANK[tier_now] < _RANK["低位"]:
         return None
     # 昨收已经在这个档位，或者今天已经推过这个档位，都不算新进入（2026-11-04：ALAB、ETN、FIS 在档位线上下来回穿，只比一小时前的话各推 3 次）
-    ref_close = float(df["Close"].iloc[-1])
     prev_score = dip_score(df, split_zones(zones, ref_close)[0], tol)["score"]
-    if _RANK[tier_now] <= max(_RANK[_tier(prev_score)], _RANK.get((sent or {}).get(t), 0)):
+    floor = max(_RANK[_tier(prev_score)], _RANK.get((sent or {}).get(t), 0))
+    if _RANK[tier_now] <= floor:
         return None
     # 必须是跌进来的："贴近强支撑"那 20 分会让价格涨上去时分数反而变高（实测 GOOG 当天 +4% 被判成新进入深度低位）。
     # 当天还在涨的不算；比一小时前高、而且这一档是涨上来才有的也不算。一小时前已经在这一档只是还没推过（上次放不下、
@@ -200,8 +211,8 @@ def _check_one(item: dict, held: set[str], sent: dict[str, str] | None = None) -
         return None
     hour_ago = _price_minutes_ago(q.get("bars") or [])
     if hour_ago is not None and last >= hour_ago:
-        then = _live_dip_estimate(df, hour_ago, split_zones(zones, hour_ago)[0], tol, hi, lo)
-        if _RANK[_tier(then)] < _RANK[tier_now]:
+        then = _RANK[_tier(_live_dip_estimate(df, hour_ago, split_zones(zones, hour_ago)[0], tol, hi, lo))]
+        if then < _RANK[tier_now] and then <= max(floor, _RANK["接近低位"]):      # 一小时前已经够得上一个没推过的档位：不能因为现在分数更高反而不推
             return None
     return {
         "ticker": t, "kind": f"盘中进入{tier_now}", "tier": tier_now, "sector": item.get("sector"),
@@ -217,6 +228,15 @@ def _market_open_today() -> bool:
     if not bars:
         return True
     return datetime.fromtimestamp(bars[-1][0], data.MARKET_TZ).date() == data._now_ct().date()
+
+
+def _last_close_day() -> pd.Timestamp | None:
+    """观察池的日线应该到哪一天（SPY 最近一根已收盘的日线，和盘后报告同一口径）。取不到就不查。"""
+    try:
+        spy = data.get_daily("SPY", "2y")
+        return spy[spy.index < pd.Timestamp(data._now_ct().date())].index[-1]
+    except Exception:
+        return None
 
 
 def scan(watchlist: list[dict]) -> dict:
@@ -235,10 +255,11 @@ def scan(watchlist: list[dict]) -> dict:
     held = set(load_holdings())
     have = {i["symbol"] for i in watchlist}
     items = watchlist + [{"symbol": t} for t in load_holdings() if t not in have]
+    as_of = _last_close_day()
 
     def one(item):
         try:
-            return item["symbol"], _check_one(item, held, sent), None
+            return item["symbol"], _check_one(item, held, sent, as_of), None
         except Exception as e:
             return item["symbol"], None, str(e)
 
@@ -270,7 +291,7 @@ def push_text(alerts: list[dict], n_failed: int = 0, n_total: int = 0, sent_ok: 
         warns.append("⚠读不到今天推过什么，可能重复")
     if not alerts:
         return "\n".join(warns), []
-    lines = warns + ["📉盘中新进入低位（盘中估分，收盘才确认）"]
+    lines = warns + ["📉今天新进入低位（估分，以盘后报告为准）"]
     used = len("\n".join(lines))
     tail = len("\n另有 +999只")
     shown: list[str] = []
