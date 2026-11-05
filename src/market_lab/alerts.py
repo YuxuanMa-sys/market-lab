@@ -193,11 +193,16 @@ def _check_one(item: dict, held: set[str], sent: dict[str, str] | None = None) -
     prev_score = dip_score(df, split_zones(zones, ref_close)[0], tol)["score"]
     if _RANK[tier_now] <= max(_RANK[_tier(prev_score)], _RANK.get((sent or {}).get(t), 0)):
         return None
-    # 必须是跌进来的：比昨收低，也比一小时前低。"贴近强支撑"那 20 分会让价格涨上去时分数反而变高（实测 GOOG 当天 +4% 被判成新进入深度低位）。
-    # 这次不符合的不会记成推过，之后真跌进来还会推。
-    hour_ago = _price_minutes_ago(q.get("bars") or [])
-    if last >= ref_close or (hour_ago is not None and last >= hour_ago):
+    # 必须是跌进来的："贴近强支撑"那 20 分会让价格涨上去时分数反而变高（实测 GOOG 当天 +4% 被判成新进入深度低位）。
+    # 当天还在涨的不算；比一小时前高、而且这一档是涨上来才有的也不算。一小时前已经在这一档只是还没推过（上次放不下、
+    # 没跑成或取数失败）的要推，不然反弹一点就再也提醒不到（2026-10-30 QBTS 跌 10.9%，全天都没写出名字）。
+    if last >= ref_close:
         return None
+    hour_ago = _price_minutes_ago(q.get("bars") or [])
+    if hour_ago is not None and last >= hour_ago:
+        then = _live_dip_estimate(df, hour_ago, split_zones(zones, hour_ago)[0], tol, hi, lo)
+        if _RANK[_tier(then)] < _RANK[tier_now]:
+            return None
     return {
         "ticker": t, "kind": f"盘中进入{tier_now}", "tier": tier_now, "sector": item.get("sector"),
         "last": round(last, 2), "chg_pct": round(q["chg_pct"], 2),
@@ -217,7 +222,7 @@ def _market_open_today() -> bool:
 def scan(watchlist: list[dict]) -> dict:
     """盘中新进入低位（低位 = 抄底分≥55，深度低位 ≥70；与早晚报的低位清单同一口径）。
 
-    条件：盘中估分所在档位 ≥ 低位，高于昨收档位和今天已经推过的档位，且价格比昨收低、也比一小时前低。
+    条件：盘中估分所在档位 ≥ 低位，高于昨收档位和今天已经推过的档位，价格比昨收低，而且这一档不是最近一小时涨上来才有的。
     盘中估分把实时价当收盘价算（成交量用 20 日均量，看不到恐慌放量那 +10 分），所以要收盘确认。
     返回 {"alerts": [...], "n_ok": 成功检查的只数, "failed": [取数失败的票], "date": 今天,
          "sent_ok": 今天推过什么读没读到, "market_closed": 今天是否休市}。

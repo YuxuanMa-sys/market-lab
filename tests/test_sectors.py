@@ -165,7 +165,7 @@ def test_all_failed_never_says_no_low_stocks():
 
 def test_stale_day_is_labelled():
     """回归：休市日 cron 照常触发，上一交易日的涨跌写成"今日"和"板块收盘"。"""
-    assert brief.day_label("postmarket") == "今日" and brief.day_label("premarket") == "昨日"
+    assert brief.day_label("postmarket") == "今日" and brief.day_label("premarket") == "上一交易日"
     assert brief.day_label("postmarket", stale=True) == "上一交易日"
     out = brief.pushes("postmarket", _hold(1), [_low("T", 60)], _summary(2), "", n_ok=2, stale_as_of="2026-11-04")
     assert "📊板块11-04收盘" in out[0] and "📉11-04收盘低位" in out[1]

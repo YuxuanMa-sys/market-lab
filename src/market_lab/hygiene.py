@@ -104,7 +104,7 @@ def _check_one(item: dict, holdings: set[str], cal: pd.DatetimeIndex) -> dict:
     if 20 - now["traded20"] > MAX_MISSING_20:
         data_fails.append(f"5 近20日缺 {20 - now['traded20']} 天")
     if not a > 0:
-        data_fails.append("5 ATR14 不可用")
+        data_fails.append("5 ATR 不可用")
     if spl:
         data_fails.append(f"5 日线拼接：{spl[-1]['before']}→{spl[-1]['after']} 价格 "
                           f"{spl[-1]['close_before']}→{spl[-1]['close_after']}，"

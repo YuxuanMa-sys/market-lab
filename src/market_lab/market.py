@@ -87,7 +87,7 @@ def market_dip_gauge(spy_df_close, vix: dict, br: dict) -> dict:
     """大盘级抄底温度计 0-100。恐慌越重、宽度越差、超跌越深，分数越高。"""
     score = 0.0
     reasons = []
-    v, pct = vix["value"], vix["percentile_2y"]
+    v, pct = vix.get("value"), vix.get("percentile_2y", 0)
     if pct >= 90:
         score += 35; reasons.append(f"VIX {v} 处于2年 {pct:.0f}% 分位，极端恐慌")
     elif pct >= 75:
@@ -163,7 +163,6 @@ def overview(session: str = "premarket") -> dict:
             quotes.append({"ticker": t, "name": name, **{k: (round(x, 2) if isinstance(x, float) else x) for k, x in q.items()}})
 
     spy_df = data.get_daily("SPY", period="2y")
-    qqq_df = data.get_daily("QQQ", period="2y")
 
     def index_levels(df):
         price = float(df["Close"].iloc[-1])
@@ -177,7 +176,15 @@ def overview(session: str = "premarket") -> dict:
             "events": detect_events(df, zones, tol),
         }
 
-    vix = vix_context()
+    # VIX 和 QQQ 只是大盘附注，取不到不该让整份报告失败。SPY 不一样：取不到说明数据源整个挂了，报错由云端任务推送告知。
+    try:
+        vix = vix_context()
+    except Exception:
+        vix = {}
+    try:
+        qqq = index_levels(data.get_daily("QQQ", period="2y"))
+    except Exception:
+        qqq = None
     br = breadth()
 
     from .stock import analyze as stock_analyze  # 避免循环导入
@@ -194,6 +201,6 @@ def overview(session: str = "premarket") -> dict:
         "dip_gauge": dip_g,
         "leverage": leverage_light(spy_a, vix, dip_g),
         "spy": index_levels(spy_df),
-        "qqq": index_levels(qqq_df),
+        "qqq": qqq,
         "market_news": data.get_market_news(limit=8),
     }

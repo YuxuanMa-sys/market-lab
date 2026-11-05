@@ -58,6 +58,13 @@ def test_abbreviated_names_and_aliases():
     assert not events.mentions("Amazon.com results", "USB", "us bancorp")
 
 
+def test_real_titles_that_were_missed():
+    assert _hit("Marvell to purchase Lumentum for $115 billion in AI connectivity push", "LITE", "Lumentum Holdings Inc.")
+    assert _hit("Salesforce is buying Braze for $5.7 billion", "BRZE", "Braze, Inc.")
+    assert _hit("GM to be acquired by Toyota", "GM", "General Motors Company")
+    assert not _hit("GM to buy more chips from Nvidia", "GM", "General Motors Company")
+
+
 def test_more_event_wordings():
     for title in ("Block to change ticker symbol to XYZ", "Block and Square to merge in $115B deal", "Block sold to Marvell for $115B",
                   "KKR to take Block private in $20B deal", "Block goes bankrupt after failed refinancing",

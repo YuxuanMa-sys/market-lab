@@ -121,6 +121,14 @@ def test_rising_price_is_not_a_new_entry(monkeypatch):
     assert alerts._check_one({"symbol": "GOOG"}, held=set()) is None
 
 
+def test_unpushed_low_stock_that_bounced_a_little_still_alerts(monkeypatch):
+    """回归：一小时前已经在这一档只是还没推过（上次放不下或没跑成），反弹一点也要推。2026-10-30 QBTS 跌 10.9% 全天没写出名字。"""
+    _crash(monkeypatch, _df(), [(-3700, 69.5), (-100, 70.0)])
+    a = alerts._check_one({"symbol": "QBTS"}, held=set(), sent={})
+    assert a is not None and a["tier"] in ("低位", "深度低位")
+    assert alerts._check_one({"symbol": "QBTS"}, held=set(), sent={"QBTS": "深度低位"}) is None
+
+
 def test_up_on_the_day_is_not_a_new_entry(monkeypatch):
     """当天还在涨的票，从高点回落也不算跌进低位（回放 10/26：FN +5.8%、CRWV +4.6% 都曾被推成新进入低位）。"""
     df = _df()

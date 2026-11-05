@@ -147,12 +147,14 @@ def company_news_all(symbol: str, days: int = 10) -> tuple[list[dict], float | N
         if len(page) < NEWS_PAGE_CAP or not stamps:
             break
         first_day = datetime.fromtimestamp(min(stamps), timezone.utc).date()
-        if first_day <= start:
+        if first_day < start:
             break
         if first_day >= to:      # 一天就超过上限，这一天取不全，只能跳到前一天
-            first_day = to - timedelta(days=1)
             gap = True
-        to = first_day
+            if to == start:
+                break
+            first_day = to - timedelta(days=1)
+        to = first_day           # 这一页最早的那天可能也没取全，所以从这一天接着翻，靠去重
     else:
         gap = True
     return out, (round((now.timestamp() - earliest) / 86400, 1) if gap else None)

@@ -34,14 +34,17 @@ def _remote_head() -> str | None:
     return out.split()[0] if out else None
 
 
+def _read(head: str | None) -> dict:
+    if not head:
+        return {}
+    _git("fetch", "-q", "origin", BRANCH)
+    return json.loads(_git("show", f"{head}:{STATE_FILE}"))
+
+
 def load_sent(day: str) -> dict[str, str] | None:
     """这一天推过的 {票: 档位}。还没推过返回 {}，读不到（网络、权限）返回 None。"""
     try:
-        head = _remote_head()
-        if not head:
-            return {}
-        _git("fetch", "-q", "origin", BRANCH)
-        rec = json.loads(_git("show", f"{head}:{STATE_FILE}"))
+        rec = _read(_remote_head())
     except _ERRORS:
         return None
     return dict(rec.get("sent") or {}) if rec.get("date") == day else {}
@@ -62,24 +65,30 @@ def _push(day: str, sent: dict[str, str], parent: str | None) -> None:
 
 
 def commit_pending() -> int:
-    """把 write_pending 留下的票并进当天记录并推到分支，返回记了几只。档位只升不降。分支被别的运行抢先更新时重试一次。"""
+    """把 write_pending 留下的票并进当天记录并推到分支，返回记了几只。档位只升不降。
+
+    读和写用同一个 head：别的运行抢先更新时，这次推送会被拒绝，重读后再试一次，不会盖掉对方的记录。
+    """
     if not PENDING.exists():
         return 0
     rec = json.loads(PENDING.read_text(encoding="utf-8"))
     day, new = rec["date"], rec["sent"]
-    if new:
-        for attempt in range(2):
-            sent = load_sent(day)
-            if sent is None:
-                raise RuntimeError(f"读不到 {BRANCH} 分支")
+    count = len(new)
+    for attempt in range(2 if new else 0):
+        try:
+            head = _remote_head()
+            old = _read(head)
+            if old.get("date", "") > day:      # 留下的是更早一天的：不能拿它盖掉今天的记录
+                count = 0
+                break
+            sent = dict(old.get("sent") or {}) if old.get("date") == day else {}
             for t, tier in new.items():
                 if RANK.get(tier, 0) > RANK.get(sent.get(t), 0):
                     sent[t] = tier
-            try:
-                _push(day, sent, _remote_head())
-                break
-            except subprocess.CalledProcessError:
-                if attempt == 1:
-                    raise
+            _push(day, sent, head)
+            break
+        except subprocess.CalledProcessError as e:
+            if attempt == 1:
+                raise RuntimeError(f"git {e.cmd[1]} 失败: {(e.stderr or '').strip()}") from e
     PENDING.unlink()
-    return len(new)
+    return count

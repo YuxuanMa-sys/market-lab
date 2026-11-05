@@ -237,11 +237,11 @@ tr:last-child td { border-bottom: none; }
 {% if mkt.breadth %}
 大盘股样本({{ mkt.breadth.sample }}只)中：<b>{{ mkt.breadth.pct_above_50dma }}%</b> 站上50日均线，
 <b>{{ mkt.breadth.pct_above_200dma }}%</b> 站上200日均线，今日 <b>{{ mkt.breadth.pct_up_today }}%</b> 上涨。
-VIX {{ mkt.vix.value }}（2年 {{ mkt.vix.percentile_2y|int }}% 分位{% if mkt.vix.term_ratio %}，期限结构 {{ mkt.vix.term_ratio }}{% if mkt.vix.backwardation %} <b>倒挂——恐慌高潮特征</b>{% endif %}{% endif %}）。
+{% if mkt.vix.value is defined %}VIX {{ mkt.vix.value }}（2年 {{ mkt.vix.percentile_2y|int }}% 分位{% if mkt.vix.term_ratio %}，期限结构 {{ mkt.vix.term_ratio }}{% if mkt.vix.backwardation %} <b>倒挂——恐慌高潮特征</b>{% endif %}{% endif %}）。{% endif %}
 {% else %}宽度数据获取失败。{% endif %}
 </div>
 
-{% for idx_name, idx in [("SPY 标普500", mkt.spy), ("QQQ 纳指100", mkt.qqq)] %}
+{% for idx_name, idx in [("SPY 标普500", mkt.spy), ("QQQ 纳指100", mkt.qqq)] if idx %}
 <h2>{{ idx_name }} 关键位（现价 {{ idx.price }}）</h2>
 <div class="card scroll">
 {% for e in idx.events %}<div class="event">⚠ {{ e.type }} {{ e.zone.low }}–{{ e.zone.high }} 区间（{{ e.bars_ago }}个交易日前{% if e.vol_confirm %}，放量{% endif %}）</div>{% endfor %}
@@ -789,6 +789,9 @@ def generate(session: str = "premarket") -> dict:
 
     holdings = load_holdings()
     stocks = data.pmap(_analyze_one, load_universe())
+    as_of = data.get_daily("SPY", "2y").index[-1].date().isoformat()
+    # 个股日线缺了最近一根（停牌、数据缺口）：涨跌幅和分数都是旧的，算取数失败，不混进清单和板块平均
+    stocks = [{"ticker": s["ticker"], "error": f"日线只到 {s['as_of']}"} if s.get("as_of", as_of) < as_of else s for s in stocks]
     ok_stocks = [s for s in stocks if "error" not in s]
 
     # 财报日必须在 advise() 之前就位：原先这段在 80 行之后才跑，导致 advise() 里
@@ -836,7 +839,6 @@ def generate(session: str = "premarket") -> dict:
         s["low_reasons"] = [x for x in (s["dip"].get("reasons") or []) if "支撑区" not in x]
 
     failed = [s["ticker"] for s in stocks if "error" in s]
-    as_of = data.get_daily("SPY", "2y").index[-1].date().isoformat()
     stale = session == "postmarket" and as_of != now.date().isoformat()     # 休市日：cron 照常触发，数据还是上一个交易日
 
     title = f"{'盘前' if session == 'premarket' else '盘后'}持仓高位 + 低位清单 · {now.strftime('%Y-%m-%d')}"

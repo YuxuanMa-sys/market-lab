@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-PUSH_MAX = 200          # PushNotification 说明：超过 200 字手机上会被截断
+PUSH_MAX = 195          # PushNotification 说明：要在 200 字以内，超过手机上会被截断。emoji 按 UTF-16 算两个单位，留点余量
 WHY_TICKERS = {"postmarket": 10, "premarket": 6}
 WHY_SECTORS = 4
 DETAIL_LOW_MAX = 25     # 低位票超过这么多只时，55-69 分的只按细分合并列出
@@ -29,10 +29,8 @@ def _tag(sector):
 
 
 def day_label(session: str, stale: bool = False) -> str:
-    """涨跌幅叫什么。盘前看到的是昨天收盘；盘后正常是今天，休市日最新K线还是上一个交易日。"""
-    if session != "postmarket":
-        return "昨日"
-    return "上一交易日" if stale else "今日"
+    """涨跌幅叫什么。盘前看到的是上一交易日的收盘（周一早上是周五）；盘后正常是今天，休市日最新K线还是上一个交易日。"""
+    return "今日" if session == "postmarket" and not stale else "上一交易日"
 
 
 def holdings_part(high_list: list[dict], budget: int = PUSH_MAX) -> str:

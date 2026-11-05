@@ -65,6 +65,26 @@ def test_news_pages_back_until_window_start(monkeypatch):
     assert calls[1] == str(today - timedelta(days=2))
 
 
+def test_news_full_page_ending_on_start_day_keeps_going(monkeypatch):
+    """回归：最后一页到了窗口第一天就停，那一天其实没取全（NVDA 10-26 少了 141/190 条），却报告成覆盖全了。"""
+    today = datetime.now(timezone.utc).date()
+    start = today - timedelta(days=10)
+    calls = []
+    def fake(path, **p):
+        calls.append(p["to"])
+        to = date.fromisoformat(p["to"])
+        if to == today:
+            return _rows(250, start)
+        return _rows(40, start, start=1000)
+    monkeypatch.setattr(finnhub, "_get", fake)
+    items, covered = finnhub.company_news_all("NVDA", days=10)
+    assert len(items) == 290 and covered is None and calls == [str(today), str(start)]
+    # 窗口第一天本身就超过上限：取不全，要报告出来，而且要停下来
+    monkeypatch.setattr(finnhub, "_get", lambda path, **p: _rows(250, start))
+    items, covered = finnhub.company_news_all("NVDA", days=10)
+    assert len(items) == 250 and covered is not None
+
+
 def test_news_short_page_is_complete(monkeypatch):
     today = datetime.now(timezone.utc).date()
     monkeypatch.setattr(finnhub, "_get", lambda path, **p: _rows(20, today))

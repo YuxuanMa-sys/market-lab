@@ -21,14 +21,14 @@ EVENT_WORDS = ("to be acquired", "acquired by", "to be bought", "being acquired"
                "to split into", "breakup", "break up", "spin-off", "spinoff", "to spin off")
 _EVENT_RE = r"\btake \S+ private\b|\btrading\b.*\bsuspended\b|\bsuspended\b.*\btrading\b"
 # 不收单独的 buy：评级和荐股标题里到处都是（"Maintains Buy on AMD"、"Should You Buy Micron"）
-_BUY_RE = r"\b(?:to acquire|to buy|will acquire|will buy|agrees? to buy|acquires?|acquiring|buys|acquisition of|bid for|offer for|deal for|purchase of)\b"
+_BUY_RE = r"\b(?:to acquire|to buy|to purchase|is buying|will acquire|will buy|agrees? to buy|acquires?|acquiring|buys|acquisition of|bid for|offer for|deal for|purchase of)\b"
 _NOT_COMPANY = r"(?!\W+(?:stock|shares|ai\b|chips|gpus|products))"     # "to buy Nvidia AI chips" 买的是货不是公司
 _NOT_DEAL = ("reason to buy", "reasons to buy", "late to buy", "stocks to buy", "time to buy", "stock options")   # 荐股和内部人交易
 _GENERIC = {"american", "united", "general", "first", "national", "international", "digital", "applied", "advanced",
             "global", "western", "royal", "texas", "southern", "bank", "new", "the", "eli"}
 # Yahoo 的公司名和标题里的叫法对不上的票。用词边界：citi 不能匹配 Citizens，southern co 不能匹配 Southern Copper
 ALIASES = {"GOOG": r"\bgoogle\b", "DIS": r"\bdisney\b", "XOM": r"\bexxon\b", "LLY": r"\blilly\b", "C": r"\bciti\b",
-           "TSM": r"\btsmc\b", "SO": r"\bsouthern co\b", "ON": r"\bonsemi\b"}
+           "TSM": r"\btsmc\b", "SO": r"\bsouthern co\b", "ON": r"\bonsemi\b", "GM": r"\bgm\b"}
 
 
 def _squash(text: str) -> str:
