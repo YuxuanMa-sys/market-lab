@@ -209,6 +209,14 @@ def get_quote(ticker: str) -> dict:
         return {}
 
 
+def get_company_name(ticker: str) -> str | None:
+    try:
+        m = _yahoo_get(ticker, {"range": "1d", "interval": "1d"}).get("meta") or {}
+    except Exception:
+        return None
+    return m.get("longName") or m.get("shortName")
+
+
 _YAHOO_TYPES = {"EQUITY": "CS", "ETF": "ETF", "MUTUALFUND": "FUND", "INDEX": "INDEX", "FUTURE": "FUTURE",
                 "CURRENCY": "CURRENCY", "CRYPTOCURRENCY": "CRYPTO"}
 

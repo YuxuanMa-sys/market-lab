@@ -41,6 +41,8 @@ def main() -> None:
     p_hy = sub.add_parser("hygiene", help="周度维护的数据卫生检查：个股类型/价格/流动性/数据完整(不评价值不值得买)")
     p_hy.add_argument("tickers", nargs="*", help="只查这些票；新票不在 watchlist 里也可以查。不填=查整个 watchlist")
 
+    sub.add_parser("retest", help="季度复测：用 2026-10-16 之后的新数据检验抄底分和高位分（只报告，不改公式）")
+
     p_ev = sub.add_parser("events", help="硬事件扫描：谁被收购、破产、退市、停牌、改代码(周度维护用，约 4 分钟)")
     p_ev.add_argument("tickers", nargs="*", help="只查这些票。不填=查整个 watchlist")
     p_ev.add_argument("--days", type=int, default=10)
@@ -121,6 +123,12 @@ def main() -> None:
             wl_all = wl_all + [{"symbol": t} for t in only if t not in known]
         json.dump(hygiene_check(wl_all, only), sys.stdout, ensure_ascii=False, indent=1, default=str)
         print()
+    elif args.cmd == "retest":
+        from .retest import run as retest_run
+        res = retest_run()
+        print(f"report: {res['report']}")
+        print(f"missing: {res['meta']['missing']}  stale: {res['meta']['stale']}  rows: {res['meta']['rows']}")
+        print(f"push: {res['push']}")
     elif args.cmd == "events":
         from .events import scan as events_scan
         from .report import load_watchlist
