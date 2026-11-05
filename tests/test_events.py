@@ -34,6 +34,8 @@ def test_noise_is_dropped():
     assert not _hit("StoneX Reiterates Buy on Advanced Micro Devices, Maintains $685 Price Target", "AMD", "Advanced Micro Devices, Inc.")
     assert not _hit("Should You Buy Micron Stock Before Its Report?", "MU", "Micron Technology, Inc.")
     assert not _hit("Hive lines up $129 million to buy Nvidia AI chips", "NVDA", "NVIDIA Corporation")
+    assert not _hit("Too Late to Buy Coca-Cola? 1 Reason It Isn't.", "KO", "The Coca-Cola Company")
+    assert not _hit("Tahnil R Davis Seizes Opportunity: Acquires $367K Worth Of Trade Desk Stock Options", "TTD", "The Trade Desk, Inc.")
     # 一两个字母的代码不能乱匹配
     assert not _hit("Merger talks on hold as markets turn", "ON", "ON Semiconductor Corporation")
     assert not _hit("T-Mobile buyout rumor", "T", "AT&T Inc.")

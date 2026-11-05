@@ -21,6 +21,7 @@ EVENT_WORDS = ("to be acquired", "acquired by", "to be bought", "being acquired"
 # 不收单独的 buy：评级和荐股标题里到处都是（"Maintains Buy on AMD"、"Should You Buy Micron"）
 _BUY_RE = r"\b(?:to acquire|to buy|will acquire|will buy|agrees? to buy|acquires?|acquiring|buys|acquisition of|bid for|offer for|deal for|purchase of)\b"
 _NOT_COMPANY = r"(?!\W+(?:stock|shares|ai\b|chips|gpus|products))"     # "to buy Nvidia AI chips" 买的是货不是公司
+_NOT_DEAL = ("reason to buy", "reasons to buy", "late to buy", "stocks to buy", "time to buy", "stock options")   # 荐股和内部人交易
 _GENERIC = {"american", "united", "general", "first", "national", "international", "digital", "applied", "advanced",
             "global", "western", "royal", "texas", "southern", "bank", "new", "the", "eli"}
 
@@ -55,6 +56,8 @@ def is_hit(title: str, ticker: str, key: str) -> bool:
     if any(w in low for w in EVENT_WORDS):
         return True
     # "XX to acquire 这家公司"：公司名要出现在收购动词后面。"这家公司 acquires XX"是它收购别人，不算。
+    if any(w in low for w in _NOT_DEAL):
+        return False
     return bool(key and re.search(_BUY_RE + r".*?" + re.escape(key) + _NOT_COMPANY, low))
 
 

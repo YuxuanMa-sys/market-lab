@@ -77,6 +77,7 @@ tickers:
   - {symbol: DDOG, sector: 数据软件, note: "Datadog"}
   - {symbol: MDB, sector: 数据软件, note: "MongoDB"}
   - {symbol: NET, sector: 数据软件, note: "Cloudflare"}
+  - {symbol: PLTR, sector: 数据软件, note: "Palantir 数据与AI平台"}
   - {symbol: CRWD, sector: 网安, note: "CrowdStrike"}
   - {symbol: PANW, sector: 网安, note: "Palo Alto"}
   - {symbol: ZS, sector: 网安, note: "Zscaler"}
@@ -124,7 +125,6 @@ tickers:
   - {symbol: MCD, sector: 品牌餐饮, note: "麦当劳"}
   - {symbol: SBUX, sector: 品牌餐饮, note: "星巴克"}
   - {symbol: CMG, sector: 品牌餐饮, note: "Chipotle"}
-  - {symbol: RGR, sector: 品牌餐饮, note: "Sturm Ruger 枪械"}
   # ======== 必需消费 ========
   - {symbol: WMT, sector: 大众零售, note: "沃尔玛"}
   - {symbol: COST, sector: 大众零售, note: "好市多"}
