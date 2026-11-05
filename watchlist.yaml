@@ -4,8 +4,7 @@
 #   note      一句话说明是什么公司，只写事实。
 #   earnings  财报日 YYYY-MM-DD（可选）。只在财报日历查不到时才填；人工值会覆盖日历值，填错会压掉正确日期。
 #
-# 持仓不在这里维护，只看 holdings.txt。下面 QCOM 留着的 cost/pct/since/shares 是旧系统的字段：
-# since 用于判断持仓后第一次到高位，其余只有 show_trading=True（已隐藏的操作单）才用。
+# 持仓不在这里维护，只看 holdings.txt。
 #
 # 选票办法（2026-11-04）：保留之前的票，每个细分再按成交额补上龙头。没有按"值不值得买"挑：
 # 无偏研究里基本面筛选都没有改善低位票，所以这个池子保证的是覆盖面、能交易、数据可信。
@@ -17,7 +16,7 @@ tickers:
   - {symbol: AVGO, sector: 计算芯片, note: "博通"}
   - {symbol: MRVL, sector: 计算芯片, note: "迈威尔"}
   - {symbol: ARM, sector: 计算芯片, note: "安谋"}
-  - {symbol: QCOM, sector: 计算芯片, note: "高通", cost: 176.2, pct: 6.89, shares: 10, since: 2026-10-09}
+  - {symbol: QCOM, sector: 计算芯片, note: "高通"}
   - {symbol: CBRS, sector: 计算芯片, note: "Cerebras 晶圆级AI芯片"}
   - {symbol: MU, sector: 存储, note: "美光"}
   - {symbol: SNDK, sector: 存储, note: "闪迪"}
