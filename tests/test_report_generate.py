@@ -140,7 +140,7 @@ def test_etf_changes_skip_older_bar(monkeypatch):
 
 def test_unadjusted_split_counts_as_failed(gen):
     """回归：拆股后历史价还没调整时，持仓票看起来跌了 87%，会被判成深度低位。"""
-    for ago in (0, 5):       # 当天，或者 Yahoo 过了几天还没调好
+    for ago in (0, 4):       # 当天，或者 Yahoo 过了几天还没调好
         p = gen(scale={"AAA": (1 / 8, ago)}, session="postmarket")
         assert "ok=2 failed=1" in p["data"]
         md = p["brief"].read_text(encoding="utf-8")
@@ -149,6 +149,7 @@ def test_unadjusted_split_counts_as_failed(gen):
 
 def test_real_crash_is_not_mistaken_for_a_split(gen):
     assert "ok=3 failed=0" in gen(scale={"AAA": (0.546, 0)})["data"]    # 观察池两年内最大单日跌幅 RGTI -45.4%
+    assert "ok=3 failed=0" in gen(scale={"AAA": (0.4, 5)})["data"]      # 真腰斩的票过几天不再算取数失败
 
 
 def _high(t, tier=True):
@@ -172,7 +173,7 @@ def test_etf_changes_skip_older_bar(monkeypatch):
 
 def test_unadjusted_split_counts_as_failed(gen):
     """回归：拆股后历史价还没调整时，持仓票看起来跌了 87%，会被判成深度低位。"""
-    for ago in (0, 5):       # 当天，或者 Yahoo 过了几天还没调好
+    for ago in (0, 4):       # 当天，或者 Yahoo 过了几天还没调好
         p = gen(scale={"AAA": (1 / 8, ago)}, session="postmarket")
         assert "ok=2 failed=1" in p["data"]
         md = p["brief"].read_text(encoding="utf-8")
@@ -181,6 +182,7 @@ def test_unadjusted_split_counts_as_failed(gen):
 
 def test_real_crash_is_not_mistaken_for_a_split(gen):
     assert "ok=3 failed=0" in gen(scale={"AAA": (0.546, 0)})["data"]    # 观察池两年内最大单日跌幅 RGTI -45.4%
+    assert "ok=3 failed=0" in gen(scale={"AAA": (0.4, 5)})["data"]      # 真腰斩的票过几天不再算取数失败
 
 
 def test_estimated_earnings_dates_are_footnoted(gen):

@@ -173,13 +173,14 @@ def high_score(df: pd.DataFrame) -> dict:
 
 
 SPLIT_GAP = 0.5         # 单日收盘低于前一天这个比例，当成拆股没调整。观察池两年 11 万根日线最大单日跌幅是 -45.4%（RGTI）
+SPLIT_LOOKBACK = 5      # 只看最近几根：真腰斩的票不能一直算取数失败，Yahoo 调整历史价一般也用不了这么久
 
 
 def analyze(ticker: str, with_news: bool = True, with_short: bool = True) -> dict:
     df = data.get_daily(ticker, period="2y")
     close = df["Close"]
-    # 拆股后 Yahoo 可能过几天才把历史价调好（SNDK 2026-11-19 一拆八）：不拦的话看起来是跌了 87%，持仓票会进深度低位，20 日内的分数都不对
-    gap = (close / close.shift(1)).tail(20)
+    # 拆股后 Yahoo 可能过几天才把历史价调好（SNDK 2026-11-19 一拆八）：不拦的话看起来是跌了 87%，持仓票会进深度低位
+    gap = (close / close.shift(1)).tail(SPLIT_LOOKBACK)
     if (gap < SPLIT_GAP).any():
         raise ValueError(f"{gap.idxmin().date()} 收盘不到前一天的一半，多半是拆股还没调整")
     price = float(close.iloc[-1])
