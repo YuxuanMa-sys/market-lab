@@ -67,6 +67,7 @@ tickers:
   - {symbol: POWL, sector: 电力设备, note: "Powell 配电"}
   - {symbol: BE, sector: 电力设备, note: "Bloom Energy 燃料电池"}
   - {symbol: PWR, sector: 电力设备, note: "Quanta 电网施工"}
+  - {symbol: NXT, sector: 电力设备, note: "Nextracker 光伏支架系统"}
   # ======== 软件 ========
   - {symbol: CRM, sector: 平台软件, note: "Salesforce"}
   - {symbol: NOW, sector: 平台软件, note: "ServiceNow"}
@@ -255,6 +256,7 @@ tickers:
   - {symbol: RKLB, sector: 太空, note: "Rocket Lab"}
   - {symbol: SPCX, sector: 太空, note: "SpaceX"}
   - {symbol: ASTS, sector: 太空, note: "AST SpaceMobile"}
+  - {symbol: FLY, sector: 太空, note: "Firefly Aerospace 火箭与月球着陆器"}
   - {symbol: IONQ, sector: 量子, note: "IonQ"}
   - {symbol: QBTS, sector: 量子, note: "D-Wave"}
   - {symbol: RGTI, sector: 量子, note: "Rigetti"}
