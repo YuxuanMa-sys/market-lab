@@ -222,9 +222,9 @@ tickers:
   - {symbol: VST, sector: 发电, note: "Vistra"}
   - {symbol: CEG, sector: 发电, note: "Constellation"}
   - {symbol: TLN, sector: 发电, note: "Talen"}
-  - {symbol: SMR, sector: 核能, note: "NuScale"}
   - {symbol: OKLO, sector: 核能, note: "Oklo"}
   - {symbol: CCJ, sector: 核能, note: "Cameco 铀"}
+  - {symbol: BWXT, sector: 核能, note: "BWX Technologies，核部件制造"}
   - {symbol: NEE, sector: 公用事业, note: "NextEra"}
   - {symbol: SO, sector: 公用事业, note: "Southern"}
   - {symbol: DUK, sector: 公用事业, note: "Duke"}
